@@ -43,6 +43,7 @@ type Payment struct {
 	DueDate               pgtype.Date        `json:"due_date"`
 	PaidDate              pgtype.Date        `json:"paid_date"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	ExcludedFromBudget    bool               `json:"excluded_from_budget"`
 }
 
 type RecurringDefinition struct {

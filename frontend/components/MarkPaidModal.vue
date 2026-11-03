@@ -21,6 +21,7 @@ const categoryId = ref(props.payment.category_id)
 const accountId = ref(props.payment.account_id)
 const amount = ref((props.payment.amount_cents / 100).toFixed(2))
 const paidDate = ref(props.payment.paid_date ?? todayIso())
+const excludedFromBudget = ref(props.payment.excluded_from_budget)
 const saving = ref(false)
 const error = ref('')
 
@@ -35,7 +36,8 @@ async function submit() {
       category_id: categoryId.value,
       account_id: accountId.value,
       amount_cents: Math.round(parseFloat(amount.value) * 100),
-      paid_date: paidDate.value
+      paid_date: paidDate.value,
+      excluded_from_budget: excludedFromBudget.value
     })
     emit('saved', updated)
   } catch (err: any) {
@@ -74,6 +76,10 @@ async function submit() {
         Paid date
         <input v-model="paidDate" type="date">
       </label>
+      <label class="checkbox">
+        <input v-model="excludedFromBudget" type="checkbox">
+        Exclude from monthly budget
+      </label>
       <p v-if="error" class="error">{{ error }}</p>
       <div class="actions">
         <button type="button" @click="emit('close')">Cancel</button>
@@ -110,6 +116,11 @@ label {
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.9rem;
+}
+
+label.checkbox {
+  flex-direction: row;
+  align-items: center;
 }
 
 .actions {

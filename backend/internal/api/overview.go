@@ -16,13 +16,25 @@ import (
 // generateOccurrences inserts any missing payments rows for active recurring
 // definitions whose due date falls within [from, to]. Idempotent: relies on
 // the (recurring_definition_id, due_date) unique constraint + ON CONFLICT.
-func (s *Server) generateOccurrences(ctx context.Context, from, to time.Time) error {
+//
+// Non-monthly definitions (interval_months > 1) are additionally generated
+// out to lookAheadTo if that's later than to: their computed due date is
+// only an estimate (the real bill can land earlier or later), so occurrences
+// are projected a bit further ahead and surfaced as "upcoming" rather than
+// only appearing once their own month is actually viewed. Monthly
+// definitions are unaffected (lookAheadTo is ignored for them) since
+// there's no equivalent "estimate" to look ahead of.
+func (s *Server) generateOccurrences(ctx context.Context, from, to, lookAheadTo time.Time) error {
 	defs, err := s.q.ListActiveRecurringDefinitions(ctx)
 	if err != nil {
 		return err
 	}
 	for _, d := range defs {
-		for _, dt := range finance.ComputeOccurrenceDates(d.AnchorDate.Time, int(d.IntervalMonths), from, to) {
+		effectiveTo := to
+		if d.IntervalMonths > 1 && lookAheadTo.After(effectiveTo) {
+			effectiveTo = lookAheadTo
+		}
+		for _, dt := range finance.ComputeOccurrenceDates(d.AnchorDate.Time, int(d.IntervalMonths), from, effectiveTo) {
 			_, err := s.q.InsertOccurrence(ctx, store.InsertOccurrenceParams{
 				RecurringDefinitionID: pgtype.Int8{Int64: d.ID, Valid: true},
 				Label:                 d.Label,
@@ -37,6 +49,15 @@ func (s *Server) generateOccurrences(ctx context.Context, from, to time.Time) er
 		}
 	}
 	return nil
+}
+
+// upcomingLookAheadEnd bounds how far into the future non-monthly recurring
+// occurrences are projected and surfaced as "upcoming" on the monthly
+// overview: through the end of the viewed year, matching the scope of the
+// yearly overview. To change the horizon (e.g. a rolling N months instead),
+// this is the only place to edit — callers just pass year through.
+func upcomingLookAheadEnd(year int) time.Time {
+	return time.Date(year, 12, 31, 0, 0, 0, 0, time.UTC)
 }
 
 type yearlyAccountOverview struct {
@@ -57,7 +78,7 @@ func (s *Server) overviewYearly(w http.ResponseWriter, r *http.Request) {
 
 	from := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(year, 12, 31, 0, 0, 0, 0, time.UTC)
-	if err := s.generateOccurrences(r.Context(), from, to); err != nil {
+	if err := s.generateOccurrences(r.Context(), from, to, to); err != nil {
 		handleDBError(w, err)
 		return
 	}
@@ -127,16 +148,21 @@ type monthlyBudgetOverview struct {
 	SetAsideCents              int64  `json:"set_aside_cents"`
 	PaidAgainstFixedCostsCents int64  `json:"paid_against_fixed_costs_cents"`
 	RemainingCents             int64  `json:"remaining_cents"`
-	AlreadySet                 bool   `json:"already_set"`
-	MarkerNote                 string `json:"marker_note"`
+	CostsAlreadySet            bool   `json:"costs_already_set"`
+	BufferAlreadySet           bool   `json:"buffer_already_set"`
+	CostsMarkerNote            string `json:"costs_marker_note"`
+	BufferMarkerNote           string `json:"buffer_marker_note"`
 }
 
 // budgetMarkerNote is the balance_adjustments.note convention used to mark
 // that this month's set-aside budget has already been deposited into an
 // account, so the same month isn't double-counted. No separate table is
-// needed: the note text itself is the idempotency marker.
-func budgetMarkerNote(year, month int) string {
-	return fmt.Sprintf("Monthly budget set-aside %04d-%02d", year, month)
+// needed: the note text itself is the idempotency marker. The current
+// month's predicted costs and the smoothed buffer are tracked as two
+// separate transfers (and markers), since they fund different things and
+// may be set aside independently.
+func budgetMarkerNote(year, month int, part string) string {
+	return fmt.Sprintf("Monthly budget set-aside %04d-%02d (%s)", year, month, part)
 }
 
 func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +185,8 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 	// each definition's own anchor date, so this just avoids excluding
 	// overdue occurrences from earlier months.
 	from := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := s.generateOccurrences(r.Context(), from, to); err != nil {
+	lookAheadTo := upcomingLookAheadEnd(year)
+	if err := s.generateOccurrences(r.Context(), from, to, lookAheadTo); err != nil {
 		handleDBError(w, err)
 		return
 	}
@@ -171,6 +198,29 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleDBError(w, err)
 		return
+	}
+
+	overduePayments, err := s.q.ListOverdueUnpaidNonMonthlyPayments(r.Context(), pgtype.Date{Time: monthStart, Valid: true})
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	overdueResponses := make([]paymentResponse, 0, len(overduePayments))
+	for _, p := range overduePayments {
+		overdueResponses = append(overdueResponses, toPaymentResponse(p))
+	}
+
+	upcomingPayments, err := s.q.ListUpcomingUnpaidNonMonthlyPayments(r.Context(), store.ListUpcomingUnpaidNonMonthlyPaymentsParams{
+		After:   pgtype.Date{Time: monthEnd, Valid: true},
+		Through: pgtype.Date{Time: lookAheadTo, Valid: true},
+	})
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	upcomingResponses := make([]paymentResponse, 0, len(upcomingPayments))
+	for _, p := range upcomingPayments {
+		upcomingResponses = append(upcomingResponses, toPaymentResponse(p))
 	}
 
 	categories, err := s.q.ListCategories(r.Context())
@@ -187,7 +237,7 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 	paymentResponses := make([]paymentResponse, 0, len(payments))
 	for _, p := range payments {
 		paymentResponses = append(paymentResponses, toPaymentResponse(p))
-		if kindByCategory[p.CategoryID] != "expense" {
+		if kindByCategory[p.CategoryID] != "expense" || p.ExcludedFromBudget {
 			continue
 		}
 		if p.PaidDate.Valid {
@@ -222,8 +272,14 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 	buffer := finance.MonthlyBufferCents(bufferEntries)
 	setAside := predictedCosts + buffer
 
-	budgetNote := budgetMarkerNote(year, month)
-	budgetAdjustments, err := s.q.FindAdjustmentsByNote(r.Context(), pgtype.Text{String: budgetNote, Valid: true})
+	costsNote := budgetMarkerNote(year, month, "costs")
+	bufferNote := budgetMarkerNote(year, month, "buffer")
+	costsAdjustments, err := s.q.FindAdjustmentsByNote(r.Context(), pgtype.Text{String: costsNote, Valid: true})
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	bufferAdjustments, err := s.q.FindAdjustmentsByNote(r.Context(), pgtype.Text{String: bufferNote, Valid: true})
 	if err != nil {
 		handleDBError(w, err)
 		return
@@ -245,17 +301,21 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"year":     year,
-		"month":    month,
-		"payments": paymentResponses,
+		"year":              year,
+		"month":             month,
+		"payments":          paymentResponses,
+		"overdue_payments":  overdueResponses,
+		"upcoming_payments": upcomingResponses,
 		"budget": monthlyBudgetOverview{
 			PredictedCostsCents:        predictedCosts,
 			BufferCents:                buffer,
 			SetAsideCents:              setAside,
 			PaidAgainstFixedCostsCents: paidAgainstFixed,
 			RemainingCents:             setAside - paidAgainstFixed,
-			AlreadySet:                 len(budgetAdjustments) > 0,
-			MarkerNote:                 budgetNote,
+			CostsAlreadySet:            len(costsAdjustments) > 0,
+			BufferAlreadySet:           len(bufferAdjustments) > 0,
+			CostsMarkerNote:            costsNote,
+			BufferMarkerNote:           bufferNote,
 		},
 		"accounts":                 accountsOut,
 		"remaining_expected_cents": remainingExpected,

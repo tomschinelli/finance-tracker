@@ -18,6 +18,7 @@ type paymentResponse struct {
 	AmountCents           int64   `json:"amount_cents"`
 	DueDate               string  `json:"due_date"`
 	PaidDate              *string `json:"paid_date"`
+	ExcludedFromBudget    bool    `json:"excluded_from_budget"`
 }
 
 func toPaymentResponse(p store.Payment) paymentResponse {
@@ -35,6 +36,7 @@ func toPaymentResponse(p store.Payment) paymentResponse {
 		AmountCents:           p.AmountCents,
 		DueDate:               formatDate(p.DueDate),
 		PaidDate:              formatDatePtr(p.PaidDate),
+		ExcludedFromBudget:    p.ExcludedFromBudget,
 	}
 }
 
@@ -82,12 +84,13 @@ func (s *Server) listPayments(w http.ResponseWriter, r *http.Request) {
 }
 
 type createPaymentRequest struct {
-	Label       string  `json:"label"`
-	CategoryID  int64   `json:"category_id"`
-	AccountID   int64   `json:"account_id"`
-	AmountCents int64   `json:"amount_cents"`
-	DueDate     string  `json:"due_date"`
-	PaidDate    *string `json:"paid_date"`
+	Label              string  `json:"label"`
+	CategoryID         int64   `json:"category_id"`
+	AccountID          int64   `json:"account_id"`
+	AmountCents        int64   `json:"amount_cents"`
+	DueDate            string  `json:"due_date"`
+	PaidDate           *string `json:"paid_date"`
+	ExcludedFromBudget bool    `json:"excluded_from_budget"`
 }
 
 func (s *Server) createPayment(w http.ResponseWriter, r *http.Request) {
@@ -117,12 +120,13 @@ func (s *Server) createPayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p, err := s.q.CreatePayment(r.Context(), store.CreatePaymentParams{
-		Label:       req.Label,
-		CategoryID:  req.CategoryID,
-		AccountID:   req.AccountID,
-		AmountCents: req.AmountCents,
-		DueDate:     dueDate,
-		PaidDate:    paidDate,
+		Label:              req.Label,
+		CategoryID:         req.CategoryID,
+		AccountID:          req.AccountID,
+		AmountCents:        req.AmountCents,
+		DueDate:            dueDate,
+		PaidDate:           paidDate,
+		ExcludedFromBudget: req.ExcludedFromBudget,
 	})
 	if err != nil {
 		handleDBError(w, err)
@@ -132,11 +136,12 @@ func (s *Server) createPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 type patchPaymentRequest struct {
-	PaidDate    *string `json:"paid_date"`
-	AmountCents *int64  `json:"amount_cents"`
-	AccountID   *int64  `json:"account_id"`
-	Label       *string `json:"label"`
-	CategoryID  *int64  `json:"category_id"`
+	PaidDate           *string `json:"paid_date"`
+	AmountCents        *int64  `json:"amount_cents"`
+	AccountID          *int64  `json:"account_id"`
+	Label              *string `json:"label"`
+	CategoryID         *int64  `json:"category_id"`
+	ExcludedFromBudget *bool   `json:"excluded_from_budget"`
 }
 
 func (s *Server) updatePayment(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +177,9 @@ func (s *Server) updatePayment(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CategoryID != nil {
 		params.CategoryID = pgtype.Int8{Int64: *req.CategoryID, Valid: true}
+	}
+	if req.ExcludedFromBudget != nil {
+		params.ExcludedFromBudget = pgtype.Bool{Bool: *req.ExcludedFromBudget, Valid: true}
 	}
 
 	p, err := s.q.UpdatePayment(r.Context(), params)

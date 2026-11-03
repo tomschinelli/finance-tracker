@@ -94,8 +94,8 @@ where id = sqlc.arg('id')
 returning *;
 
 -- name: CreatePayment :one
-insert into payments (recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date)
-values (null, $1, $2, $3, $4, $5, $6)
+insert into payments (recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, excluded_from_budget)
+values (null, $1, $2, $3, $4, $5, $6, $7)
 returning *;
 
 -- name: InsertOccurrence :many
@@ -128,13 +128,39 @@ join recurring_definitions rd on rd.id = p.recurring_definition_id
 where rd.interval_months = 12 and extract(year from p.due_date) = $1::int
 order by p.due_date, p.id;
 
+-- name: ListOverdueUnpaidNonMonthlyPayments :many
+-- Unpaid occurrences of non-monthly (interval_months > 1) recurring
+-- definitions whose due_date has passed before the viewed month: since the
+-- next real bill date is only an estimate, these are carried forward and
+-- kept visible until paid, however many months overdue.
+select p.* from payments p
+join recurring_definitions rd on rd.id = p.recurring_definition_id
+where rd.interval_months > 1
+  and p.paid_date is null
+  and p.due_date < sqlc.arg(before)::date
+order by p.due_date, p.id;
+
+-- name: ListUpcomingUnpaidNonMonthlyPayments :many
+-- Unpaid occurrences of non-monthly recurring definitions projected for a
+-- later month within the look-ahead window: hidden by default in the UI,
+-- but generated/listed here so one can be marked paid if the real bill
+-- arrives early.
+select p.* from payments p
+join recurring_definitions rd on rd.id = p.recurring_definition_id
+where rd.interval_months > 1
+  and p.paid_date is null
+  and p.due_date > sqlc.arg(after)::date
+  and p.due_date <= sqlc.arg(through)::date
+order by p.due_date, p.id;
+
 -- name: UpdatePayment :one
 update payments set
   paid_date = coalesce(sqlc.narg('paid_date'), paid_date),
   amount_cents = coalesce(sqlc.narg('amount_cents'), amount_cents),
   account_id = coalesce(sqlc.narg('account_id'), account_id),
   label = coalesce(sqlc.narg('label'), label),
-  category_id = coalesce(sqlc.narg('category_id'), category_id)
+  category_id = coalesce(sqlc.narg('category_id'), category_id),
+  excluded_from_budget = coalesce(sqlc.narg('excluded_from_budget'), excluded_from_budget)
 where id = sqlc.arg('id')
 returning *;
 
@@ -172,8 +198,8 @@ insert into recurring_definitions (id, label, category_id, account_id, amount_ce
 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: InsertPaymentWithID :exec
-insert into payments (id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at)
-values ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+insert into payments (id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: InsertBalanceAdjustmentWithID :exec
 insert into balance_adjustments (id, account_id, amount_cents, note, occurred_on, created_at)

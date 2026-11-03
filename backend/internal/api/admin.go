@@ -60,6 +60,7 @@ type exportPayment struct {
 	DueDate               string  `json:"due_date"`
 	PaidDate              *string `json:"paid_date"`
 	CreatedAt             string  `json:"created_at"`
+	ExcludedFromBudget    bool    `json:"excluded_from_budget"`
 }
 
 type exportBalanceAdjustment struct {
@@ -150,6 +151,7 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 			DueDate:               formatDate(p.DueDate),
 			PaidDate:              formatDatePtr(p.PaidDate),
 			CreatedAt:             p.CreatedAt.Time.Format(time.RFC3339),
+			ExcludedFromBudget:    p.ExcludedFromBudget,
 		})
 	}
 	for _, adj := range adjustments {
@@ -305,6 +307,7 @@ func (s *Server) importData(w http.ResponseWriter, r *http.Request) {
 			DueDate:               dueDate,
 			PaidDate:              paidDate,
 			CreatedAt:             pgtype.Timestamptz{Time: createdAt, Valid: true},
+			ExcludedFromBudget:    p.ExcludedFromBudget,
 		}); err != nil {
 			handleDBError(w, err)
 			return

@@ -21,6 +21,7 @@ const accountId = ref('')
 const amount = ref('')
 const dueDate = ref(todayIso())
 const alreadyPaid = ref(false)
+const excludedFromBudget = ref(false)
 const saving = ref(false)
 const error = ref('')
 
@@ -36,7 +37,8 @@ async function submit() {
       account_id: accountId.value,
       amount_cents: Math.round(parseFloat(amount.value) * 100),
       due_date: dueDate.value,
-      paid_date: alreadyPaid.value ? dueDate.value : null
+      paid_date: alreadyPaid.value ? dueDate.value : null,
+      excluded_from_budget: excludedFromBudget.value
     })
     emit('created', created)
   } catch (err: any) {
@@ -80,6 +82,10 @@ async function submit() {
       <label class="checkbox">
         <input v-model="alreadyPaid" type="checkbox">
         Already paid
+      </label>
+      <label class="checkbox">
+        <input v-model="excludedFromBudget" type="checkbox">
+        Exclude from monthly budget
       </label>
       <p v-if="error" class="error">{{ error }}</p>
       <div class="actions">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Account, Category, MonthlyOverview, Payment, RecurringDefinition, Transfer } from '~/types/api'
+import type { Account, Category, MonthlyOverview, Payment, RecurringDefinition } from '~/types/api'
 
 const api = useApi()
 
@@ -14,7 +14,12 @@ const { data: overview, error: overviewError, refresh } = await useAsyncData<Mon
 const { data: categories } = await useAsyncData<Category[]>('categories', () => api.get('/categories'), { default: () => [] })
 const { data: accounts } = await useAsyncData<Account[]>('accounts', () => api.get('/accounts'), { default: () => [] })
 
-watch([year, month], () => refresh())
+const showUpcoming = ref(false)
+
+watch([year, month], () => {
+  showUpcoming.value = false
+  refresh()
+})
 
 const monthLabel = computed(() => {
   const d = new Date(year.value, month.value - 1, 1)
@@ -76,7 +81,7 @@ async function onRecurringCreated(_definition: RecurringDefinition) {
   await refresh()
 }
 
-async function onBudgetCreated(_transfer: Transfer) {
+async function onBudgetCreated() {
   showAddBudget.value = false
   await refresh()
 }
@@ -123,14 +128,15 @@ async function onBudgetCreated(_transfer: Transfer) {
       </section>
 
       <section class="budget-action">
-        <p v-if="overview.budget.already_set">
+        <p v-if="overview.budget.costs_already_set && overview.budget.buffer_already_set">
           Budget set for this month.
         </p>
         <template v-else>
           <p>
-            Budget not set for this month. Predicted costs: €{{ euros(overview.budget.predicted_costs_cents) }},
-            plus €{{ euros(overview.budget.buffer_cents) }} buffer for non-monthly costs
-            (€{{ euros(overview.budget.set_aside_cents) }} total to set aside).
+            Costs: €{{ euros(overview.budget.predicted_costs_cents) }}
+            ({{ overview.budget.costs_already_set ? 'set' : 'not set' }}),
+            buffer: €{{ euros(overview.budget.buffer_cents) }}
+            ({{ overview.budget.buffer_already_set ? 'set' : 'not set' }}).
           </p>
           <button type="button" @click="showAddBudget = true">Add budget to account</button>
         </template>
@@ -154,6 +160,19 @@ async function onBudgetCreated(_transfer: Transfer) {
           </div>
         </div>
 
+        <template v-if="overview.overdue_payments.length">
+          <h3>Overdue</h3>
+          <PaymentRow
+            v-for="p in overview.overdue_payments"
+            :key="p.id"
+            :payment="p"
+            :category-name="categoryName(p.category_id)"
+            :account-name="accountName(p.account_id)"
+            overdue
+            @select="selectedPayment = $event"
+          />
+        </template>
+
         <h3>Unpaid</h3>
         <div v-if="unpaidPayments.length === 0">No unpaid payments this month.</div>
         <PaymentRow
@@ -164,6 +183,30 @@ async function onBudgetCreated(_transfer: Transfer) {
           :account-name="accountName(p.account_id)"
           @select="selectedPayment = $event"
         />
+
+        <div class="upcoming-toggle">
+          <template v-if="overview.upcoming_payments.length === 0">
+            Nothing else expected for the rest of the year.
+          </template>
+          <template v-else-if="!showUpcoming">
+            {{ overview.upcoming_payments.length }} upcoming non-monthly cost{{ overview.upcoming_payments.length === 1 ? '' : 's' }}
+            projected later this year.
+            <button type="button" @click="showUpcoming = true">Show</button>
+          </template>
+          <template v-else>
+            <button type="button" @click="showUpcoming = false">Hide upcoming</button>
+          </template>
+        </div>
+        <template v-if="showUpcoming">
+          <PaymentRow
+            v-for="p in overview.upcoming_payments"
+            :key="p.id"
+            :payment="p"
+            :category-name="categoryName(p.category_id)"
+            :account-name="accountName(p.account_id)"
+            @select="selectedPayment = $event"
+          />
+        </template>
 
         <h3>Paid</h3>
         <div v-if="paidPayments.length === 0">No paid payments this month.</div>
@@ -206,8 +249,12 @@ async function onBudgetCreated(_transfer: Transfer) {
     <AddBudgetModal
       v-if="showAddBudget && overview"
       :accounts="accounts ?? []"
-      :amount-cents="overview.budget.set_aside_cents"
-      :note="overview.budget.marker_note"
+      :costs-amount-cents="overview.budget.predicted_costs_cents"
+      :buffer-amount-cents="overview.budget.buffer_cents"
+      :costs-already-set="overview.budget.costs_already_set"
+      :buffer-already-set="overview.budget.buffer_already_set"
+      :costs-note="overview.budget.costs_marker_note"
+      :buffer-note="overview.budget.buffer_marker_note"
       @close="showAddBudget = false"
       @created="onBudgetCreated"
     />
@@ -284,6 +331,15 @@ async function onBudgetCreated(_transfer: Transfer) {
 
 .payments-actions {
   display: flex;
+  gap: 0.5rem;
+}
+
+.upcoming-toggle {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 

@@ -156,18 +156,19 @@ func (q *Queries) CreateDefaultCategory(ctx context.Context) (Category, error) {
 }
 
 const createPayment = `-- name: CreatePayment :one
-insert into payments (recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date)
-values (null, $1, $2, $3, $4, $5, $6)
-returning id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at
+insert into payments (recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, excluded_from_budget)
+values (null, $1, $2, $3, $4, $5, $6, $7)
+returning id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget
 `
 
 type CreatePaymentParams struct {
-	Label       string      `json:"label"`
-	CategoryID  int64       `json:"category_id"`
-	AccountID   int64       `json:"account_id"`
-	AmountCents int64       `json:"amount_cents"`
-	DueDate     pgtype.Date `json:"due_date"`
-	PaidDate    pgtype.Date `json:"paid_date"`
+	Label              string      `json:"label"`
+	CategoryID         int64       `json:"category_id"`
+	AccountID          int64       `json:"account_id"`
+	AmountCents        int64       `json:"amount_cents"`
+	DueDate            pgtype.Date `json:"due_date"`
+	PaidDate           pgtype.Date `json:"paid_date"`
+	ExcludedFromBudget bool        `json:"excluded_from_budget"`
 }
 
 func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (Payment, error) {
@@ -178,6 +179,7 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		arg.AmountCents,
 		arg.DueDate,
 		arg.PaidDate,
+		arg.ExcludedFromBudget,
 	)
 	var i Payment
 	err := row.Scan(
@@ -190,6 +192,7 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 		&i.DueDate,
 		&i.PaidDate,
 		&i.CreatedAt,
+		&i.ExcludedFromBudget,
 	)
 	return i, err
 }
@@ -347,7 +350,7 @@ func (q *Queries) GetDefaultCategory(ctx context.Context) (Category, error) {
 }
 
 const getPayment = `-- name: GetPayment :one
-select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at from payments where id = $1
+select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget from payments where id = $1
 `
 
 func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
@@ -363,6 +366,7 @@ func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
 		&i.DueDate,
 		&i.PaidDate,
 		&i.CreatedAt,
+		&i.ExcludedFromBudget,
 	)
 	return i, err
 }
@@ -467,7 +471,7 @@ const insertOccurrence = `-- name: InsertOccurrence :many
 insert into payments (recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date)
 values ($1, $2, $3, $4, $5, $6, null)
 on conflict (recurring_definition_id, due_date) do nothing
-returning id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at
+returning id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget
 `
 
 type InsertOccurrenceParams struct {
@@ -505,6 +509,7 @@ func (q *Queries) InsertOccurrence(ctx context.Context, arg InsertOccurrencePara
 			&i.DueDate,
 			&i.PaidDate,
 			&i.CreatedAt,
+			&i.ExcludedFromBudget,
 		); err != nil {
 			return nil, err
 		}
@@ -517,8 +522,8 @@ func (q *Queries) InsertOccurrence(ctx context.Context, arg InsertOccurrencePara
 }
 
 const insertPaymentWithID = `-- name: InsertPaymentWithID :exec
-insert into payments (id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at)
-values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+insert into payments (id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `
 
 type InsertPaymentWithIDParams struct {
@@ -531,6 +536,7 @@ type InsertPaymentWithIDParams struct {
 	DueDate               pgtype.Date        `json:"due_date"`
 	PaidDate              pgtype.Date        `json:"paid_date"`
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	ExcludedFromBudget    bool               `json:"excluded_from_budget"`
 }
 
 func (q *Queries) InsertPaymentWithID(ctx context.Context, arg InsertPaymentWithIDParams) error {
@@ -544,6 +550,7 @@ func (q *Queries) InsertPaymentWithID(ctx context.Context, arg InsertPaymentWith
 		arg.DueDate,
 		arg.PaidDate,
 		arg.CreatedAt,
+		arg.ExcludedFromBudget,
 	)
 	return err
 }
@@ -711,7 +718,7 @@ func (q *Queries) ListAllBalanceAdjustments(ctx context.Context) ([]BalanceAdjus
 }
 
 const listAllPayments = `-- name: ListAllPayments :many
-select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at from payments order by id
+select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget from payments order by id
 `
 
 func (q *Queries) ListAllPayments(ctx context.Context) ([]Payment, error) {
@@ -733,6 +740,7 @@ func (q *Queries) ListAllPayments(ctx context.Context) ([]Payment, error) {
 			&i.DueDate,
 			&i.PaidDate,
 			&i.CreatedAt,
+			&i.ExcludedFromBudget,
 		); err != nil {
 			return nil, err
 		}
@@ -773,8 +781,52 @@ func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
 	return items, nil
 }
 
+const listOverdueUnpaidNonMonthlyPayments = `-- name: ListOverdueUnpaidNonMonthlyPayments :many
+select p.id, p.recurring_definition_id, p.label, p.category_id, p.account_id, p.amount_cents, p.due_date, p.paid_date, p.created_at, p.excluded_from_budget from payments p
+join recurring_definitions rd on rd.id = p.recurring_definition_id
+where rd.interval_months > 1
+  and p.paid_date is null
+  and p.due_date < $1::date
+order by p.due_date, p.id
+`
+
+// Unpaid occurrences of non-monthly (interval_months > 1) recurring
+// definitions whose due_date has passed before the viewed month: since the
+// next real bill date is only an estimate, these are carried forward and
+// kept visible until paid, however many months overdue.
+func (q *Queries) ListOverdueUnpaidNonMonthlyPayments(ctx context.Context, before pgtype.Date) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, listOverdueUnpaidNonMonthlyPayments, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Payment
+	for rows.Next() {
+		var i Payment
+		if err := rows.Scan(
+			&i.ID,
+			&i.RecurringDefinitionID,
+			&i.Label,
+			&i.CategoryID,
+			&i.AccountID,
+			&i.AmountCents,
+			&i.DueDate,
+			&i.PaidDate,
+			&i.CreatedAt,
+			&i.ExcludedFromBudget,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPaymentsByAccount = `-- name: ListPaymentsByAccount :many
-select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at from payments
+select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget from payments
 where account_id = $1
 order by due_date desc, id desc
 `
@@ -798,6 +850,7 @@ func (q *Queries) ListPaymentsByAccount(ctx context.Context, accountID int64) ([
 			&i.DueDate,
 			&i.PaidDate,
 			&i.CreatedAt,
+			&i.ExcludedFromBudget,
 		); err != nil {
 			return nil, err
 		}
@@ -810,7 +863,7 @@ func (q *Queries) ListPaymentsByAccount(ctx context.Context, accountID int64) ([
 }
 
 const listPaymentsByYear = `-- name: ListPaymentsByYear :many
-select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at from payments
+select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget from payments
 where extract(year from due_date) = $1::int
 order by due_date, id
 `
@@ -834,6 +887,7 @@ func (q *Queries) ListPaymentsByYear(ctx context.Context, dollar_1 int32) ([]Pay
 			&i.DueDate,
 			&i.PaidDate,
 			&i.CreatedAt,
+			&i.ExcludedFromBudget,
 		); err != nil {
 			return nil, err
 		}
@@ -846,7 +900,7 @@ func (q *Queries) ListPaymentsByYear(ctx context.Context, dollar_1 int32) ([]Pay
 }
 
 const listPaymentsByYearMonth = `-- name: ListPaymentsByYearMonth :many
-select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at from payments
+select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget from payments
 where extract(year from due_date) = $1::int and extract(month from due_date) = $2::int
 order by due_date, id
 `
@@ -875,6 +929,7 @@ func (q *Queries) ListPaymentsByYearMonth(ctx context.Context, arg ListPaymentsB
 			&i.DueDate,
 			&i.PaidDate,
 			&i.CreatedAt,
+			&i.ExcludedFromBudget,
 		); err != nil {
 			return nil, err
 		}
@@ -956,8 +1011,58 @@ func (q *Queries) ListRecurringDefinitionsByTag(ctx context.Context, tag string)
 	return items, nil
 }
 
+const listUpcomingUnpaidNonMonthlyPayments = `-- name: ListUpcomingUnpaidNonMonthlyPayments :many
+select p.id, p.recurring_definition_id, p.label, p.category_id, p.account_id, p.amount_cents, p.due_date, p.paid_date, p.created_at, p.excluded_from_budget from payments p
+join recurring_definitions rd on rd.id = p.recurring_definition_id
+where rd.interval_months > 1
+  and p.paid_date is null
+  and p.due_date > $1::date
+  and p.due_date <= $2::date
+order by p.due_date, p.id
+`
+
+type ListUpcomingUnpaidNonMonthlyPaymentsParams struct {
+	After   pgtype.Date `json:"after"`
+	Through pgtype.Date `json:"through"`
+}
+
+// Unpaid occurrences of non-monthly recurring definitions projected for a
+// later month within the look-ahead window: hidden by default in the UI,
+// but generated/listed here so one can be marked paid if the real bill
+// arrives early.
+func (q *Queries) ListUpcomingUnpaidNonMonthlyPayments(ctx context.Context, arg ListUpcomingUnpaidNonMonthlyPaymentsParams) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, listUpcomingUnpaidNonMonthlyPayments, arg.After, arg.Through)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Payment
+	for rows.Next() {
+		var i Payment
+		if err := rows.Scan(
+			&i.ID,
+			&i.RecurringDefinitionID,
+			&i.Label,
+			&i.CategoryID,
+			&i.AccountID,
+			&i.AmountCents,
+			&i.DueDate,
+			&i.PaidDate,
+			&i.CreatedAt,
+			&i.ExcludedFromBudget,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listYearlyFrequencyPayments = `-- name: ListYearlyFrequencyPayments :many
-select p.id, p.recurring_definition_id, p.label, p.category_id, p.account_id, p.amount_cents, p.due_date, p.paid_date, p.created_at from payments p
+select p.id, p.recurring_definition_id, p.label, p.category_id, p.account_id, p.amount_cents, p.due_date, p.paid_date, p.created_at, p.excluded_from_budget from payments p
 join recurring_definitions rd on rd.id = p.recurring_definition_id
 where rd.interval_months = 12 and extract(year from p.due_date) = $1::int
 order by p.due_date, p.id
@@ -982,6 +1087,7 @@ func (q *Queries) ListYearlyFrequencyPayments(ctx context.Context, dollar_1 int3
 			&i.DueDate,
 			&i.PaidDate,
 			&i.CreatedAt,
+			&i.ExcludedFromBudget,
 		); err != nil {
 			return nil, err
 		}
@@ -1155,18 +1261,20 @@ update payments set
   amount_cents = coalesce($2, amount_cents),
   account_id = coalesce($3, account_id),
   label = coalesce($4, label),
-  category_id = coalesce($5, category_id)
-where id = $6
-returning id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at
+  category_id = coalesce($5, category_id),
+  excluded_from_budget = coalesce($6, excluded_from_budget)
+where id = $7
+returning id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at, excluded_from_budget
 `
 
 type UpdatePaymentParams struct {
-	PaidDate    pgtype.Date `json:"paid_date"`
-	AmountCents pgtype.Int8 `json:"amount_cents"`
-	AccountID   pgtype.Int8 `json:"account_id"`
-	Label       pgtype.Text `json:"label"`
-	CategoryID  pgtype.Int8 `json:"category_id"`
-	ID          int64       `json:"id"`
+	PaidDate           pgtype.Date `json:"paid_date"`
+	AmountCents        pgtype.Int8 `json:"amount_cents"`
+	AccountID          pgtype.Int8 `json:"account_id"`
+	Label              pgtype.Text `json:"label"`
+	CategoryID         pgtype.Int8 `json:"category_id"`
+	ExcludedFromBudget pgtype.Bool `json:"excluded_from_budget"`
+	ID                 int64       `json:"id"`
 }
 
 func (q *Queries) UpdatePayment(ctx context.Context, arg UpdatePaymentParams) (Payment, error) {
@@ -1176,6 +1284,7 @@ func (q *Queries) UpdatePayment(ctx context.Context, arg UpdatePaymentParams) (P
 		arg.AccountID,
 		arg.Label,
 		arg.CategoryID,
+		arg.ExcludedFromBudget,
 		arg.ID,
 	)
 	var i Payment
@@ -1189,6 +1298,7 @@ func (q *Queries) UpdatePayment(ctx context.Context, arg UpdatePaymentParams) (P
 		&i.DueDate,
 		&i.PaidDate,
 		&i.CreatedAt,
+		&i.ExcludedFromBudget,
 	)
 	return i, err
 }

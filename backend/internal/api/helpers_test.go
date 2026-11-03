@@ -108,6 +108,7 @@ type paymentDTO struct {
 	AmountCents           int64   `json:"amount_cents"`
 	DueDate               string  `json:"due_date"`
 	PaidDate              *string `json:"paid_date"`
+	ExcludedFromBudget    bool    `json:"excluded_from_budget"`
 }
 
 type adjustmentDTO struct {

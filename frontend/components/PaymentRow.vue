@@ -6,6 +6,7 @@ const props = defineProps<{
   categoryName?: string
   accountName?: string
   currencySymbol?: string
+  overdue?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -19,7 +20,7 @@ const amount = computed(() => (props.payment.amount_cents / 100).toFixed(2))
 <template>
   <div
     class="payment-row"
-    :class="{ unpaid: !isPaid }"
+    :class="{ unpaid: !isPaid, overdue }"
     @click="emit('select', payment)"
   >
     <span class="label">{{ payment.label }}</span>
@@ -27,7 +28,7 @@ const amount = computed(() => (props.payment.amount_cents / 100).toFixed(2))
     <span class="account">{{ accountName }}</span>
     <span class="due">{{ payment.due_date }}</span>
     <span class="amount">{{ currencySymbol ?? '€' }}{{ amount }}</span>
-    <span class="status">{{ isPaid ? 'paid' : 'expected' }}</span>
+    <span class="status">{{ overdue ? 'overdue' : isPaid ? 'paid' : 'expected' }}<template v-if="payment.excluded_from_budget"> · excluded</template></span>
   </div>
 </template>
 
@@ -49,6 +50,16 @@ const amount = computed(() => (props.payment.amount_cents / 100).toFixed(2))
 
 .payment-row.unpaid {
   color: #9ca3af;
+}
+
+.payment-row.overdue {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-left: 3px solid #b91c1c;
+}
+
+.payment-row.overdue:hover {
+  background: #fde8e8;
 }
 
 .amount {

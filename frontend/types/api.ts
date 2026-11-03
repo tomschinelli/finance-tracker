@@ -53,6 +53,7 @@ export interface Payment {
   amount_cents: number
   due_date: string
   paid_date: string | null
+  excluded_from_budget: boolean
 }
 
 export interface YearlyOverview {
@@ -100,14 +101,18 @@ export interface MonthlyOverview {
   year: number
   month: number
   payments: Payment[]
+  overdue_payments: Payment[]
+  upcoming_payments: Payment[]
   budget: {
     predicted_costs_cents: number
     buffer_cents: number
     set_aside_cents: number
     paid_against_fixed_costs_cents: number
     remaining_cents: number
-    already_set: boolean
-    marker_note: string
+    costs_already_set: boolean
+    buffer_already_set: boolean
+    costs_marker_note: string
+    buffer_marker_note: string
   }
   accounts: {
     account_id: string
