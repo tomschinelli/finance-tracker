@@ -219,16 +219,8 @@ func (s *Server) createAdjustment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Only the default account can be adjusted without a counterpart
-	// account; every other account's balance changes via a transfer (see
-	// createTransfer), so an offsetting debit/credit always exists.
-	acct, err := s.q.GetAccount(r.Context(), id)
-	if err != nil {
+	if _, err := s.q.GetAccount(r.Context(), id); err != nil {
 		handleDBError(w, err)
-		return
-	}
-	if !acct.IsDefault {
-		writeError(w, http.StatusBadRequest, "non-default accounts must be funded via a transfer (POST /transfers)")
 		return
 	}
 

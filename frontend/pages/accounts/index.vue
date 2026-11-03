@@ -18,6 +18,7 @@ function todayIso() {
 }
 
 const openAdjustmentFor = ref<string | null>(null)
+const adjustmentType = ref<'direct' | 'transfer'>('direct')
 const amount = ref('')
 const note = ref('')
 const occurredOn = ref(todayIso())
@@ -31,6 +32,7 @@ const otherAccountOptions = computed(() =>
 
 function openAdjustment(account: Account) {
   openAdjustmentFor.value = account.id
+  adjustmentType.value = 'direct'
   amount.value = euros(account.current_balance_cents)
   note.value = ''
   occurredOn.value = todayIso()
@@ -44,7 +46,8 @@ async function submitAdjustment() {
   if (!account) return
 
   const deltaCents = Math.round(parseFloat(amount.value) * 100) - account.current_balance_cents
-  if (!account.is_default) {
+
+  if (adjustmentType.value === 'transfer') {
     if (!otherAccountId.value) {
       error.value = 'Select the account this amount moves with'
       return
@@ -58,7 +61,7 @@ async function submitAdjustment() {
   saving.value = true
   error.value = ''
   try {
-    if (account.is_default) {
+    if (adjustmentType.value === 'direct') {
       await api.post(`/accounts/${openAdjustmentFor.value}/adjustments`, {
         amount_cents: deltaCents,
         note: note.value,
@@ -271,11 +274,21 @@ async function submitNewAccount() {
         </div>
 
         <div v-if="openAdjustmentFor === a.id" class="adjustment-form">
+          <label class="radio-group">
+            <span>
+              <input v-model="adjustmentType" type="radio" value="direct">
+              Direct correction
+            </span>
+            <span>
+              <input v-model="adjustmentType" type="radio" value="transfer">
+              Transfer with another account
+            </span>
+          </label>
           <label>
             New balance ({{ a.currency }})
             <input v-model="amount" type="number" step="0.01">
           </label>
-          <label v-if="!a.is_default">
+          <label v-if="adjustmentType === 'transfer'">
             Account this moves with
             <select v-model="otherAccountId">
               <option value="" disabled>Select account</option>
@@ -293,7 +306,11 @@ async function submitNewAccount() {
           <p v-if="error" class="error">{{ error }}</p>
           <div class="actions">
             <button type="button" @click="openAdjustmentFor = null">Cancel</button>
-            <button type="button" :disabled="saving || (!a.is_default && !otherAccountId)" @click="submitAdjustment">
+            <button
+              type="button"
+              :disabled="saving || (adjustmentType === 'transfer' && !otherAccountId)"
+              @click="submitAdjustment"
+            >
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
           </div>
@@ -395,6 +412,18 @@ async function submitNewAccount() {
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.9rem;
+}
+
+.adjustment-form .radio-group {
+  flex-direction: row;
+  gap: 1rem;
+}
+
+.adjustment-form .radio-group span {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: normal;
 }
 
 .actions {

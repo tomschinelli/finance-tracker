@@ -60,18 +60,28 @@ func TestSetDefaultAccount_MovesDefaultFlag(t *testing.T) {
 	}
 }
 
-func TestCreateAdjustment_RejectedOnNonDefaultAccount(t *testing.T) {
+func TestCreateAdjustment_AllowedOnNonDefaultAccount(t *testing.T) {
 	srv := newTestServer(t)
 	h := srv.Routes()
 
 	createAccount(t, h, "Savings", 0) // becomes default
-	other := createAccount(t, h, "Fix Costs", 0)
+	other := createAccount(t, h, "Fix Costs", 1000)
 
 	resp := do(t, h, "POST", "/accounts/"+itoa(other.ID)+"/adjustments", map[string]any{
 		"amount_cents": 100,
 		"occurred_on":  "2026-01-01",
 	})
-	requireStatus(t, resp, http.StatusBadRequest)
+	requireStatus(t, resp, http.StatusCreated)
+
+	var accounts []accountDTO
+	decodeBody(t, do(t, h, "GET", "/accounts", nil), &accounts)
+	byID := map[int64]int64{}
+	for _, a := range accounts {
+		byID[a.ID] = a.CurrentBalanceCents
+	}
+	if byID[other.ID] != 1100 {
+		t.Fatalf("accounts = %v, want balance 1100 after +100 adjustment on a 1000 starting balance", accounts)
+	}
 }
 
 func TestCreateAdjustment_AllowedOnDefaultAccount(t *testing.T) {
