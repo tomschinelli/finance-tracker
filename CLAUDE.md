@@ -74,6 +74,16 @@ docker compose up -d     # postgres + backend (:8081) + frontend (:3000)
 Slower to iterate on (image rebuild per change) but useful for a quick
 end-to-end check.
 
+There are no bind mounts, so backend/frontend source is baked into the
+image at build time — a code change is invisible to a running container
+until it's rebuilt. If the full stack is up via Compose, rebuild and
+recreate the affected service(s) after implementing a feature, before
+verifying it end-to-end:
+
+```
+docker compose up -d --build backend frontend
+```
+
 ### Backend (from `backend/`)
 
 ```
