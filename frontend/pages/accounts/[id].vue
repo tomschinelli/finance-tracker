@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Account, AccountAdjustment, Payment } from '~/types/api'
+import type { Account, AccountAdjustment, Category, Payment } from '~/types/api'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -17,13 +17,44 @@ const { data: adjustments, error: adjustmentsError } = await useAsyncData<Accoun
   () => api.get(`/accounts/${id}/adjustments`),
   { default: () => [] }
 )
-const adjustmentsByRecent = computed(() => [...(adjustments.value ?? [])].reverse())
 
 const { data: payments, error: paymentsError } = await useAsyncData<Payment[]>(
   `account-${id}-payments`,
   () => api.get(`/accounts/${id}/payments`),
   { default: () => [] }
 )
+
+const { data: categories } = await useAsyncData<Category[]>(
+  'categories',
+  () => api.get('/categories'),
+  { default: () => [] }
+)
+const categoryKind = (categoryId: string) => categories.value?.find(c => c.id === categoryId)?.kind
+
+interface HistoryEntry {
+  key: string
+  date: string
+  amountCents: number
+  note: string
+}
+
+const historyByRecent = computed<HistoryEntry[]>(() => {
+  const fromAdjustments: HistoryEntry[] = (adjustments.value ?? []).map(adj => ({
+    key: `adj-${adj.id}`,
+    date: adj.occurred_on,
+    amountCents: adj.amount_cents,
+    note: adj.note,
+  }))
+  const fromPayments: HistoryEntry[] = (payments.value ?? [])
+    .filter(p => p.paid_date)
+    .map(p => ({
+      key: `pay-${p.id}`,
+      date: p.paid_date as string,
+      amountCents: categoryKind(p.category_id) === 'income' ? p.amount_cents : -p.amount_cents,
+      note: p.label,
+    }))
+  return [...fromAdjustments, ...fromPayments].sort((a, b) => b.date.localeCompare(a.date))
+})
 
 function euros(cents: number) {
   return (cents / 100).toFixed(2)
@@ -59,7 +90,10 @@ function euros(cents: number) {
       <p v-if="adjustmentsError" class="error">
         Could not load adjustments: {{ adjustmentsError.message }}
       </p>
-      <p v-else-if="!adjustmentsByRecent.length">No adjustments yet.</p>
+      <p v-else-if="paymentsError" class="error">
+        Could not load payments: {{ paymentsError.message }}
+      </p>
+      <p v-else-if="!historyByRecent.length">No adjustments yet.</p>
       <table v-else class="adjustments">
         <thead>
           <tr>
@@ -69,36 +103,12 @@ function euros(cents: number) {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="adj in adjustmentsByRecent" :key="adj.id">
-            <td>{{ adj.occurred_on }}</td>
-            <td :class="{ negative: adj.amount_cents < 0 }">
-              {{ adj.amount_cents >= 0 ? '+' : '' }}{{ euros(adj.amount_cents) }}
+          <tr v-for="entry in historyByRecent" :key="entry.key">
+            <td>{{ entry.date }}</td>
+            <td :class="{ negative: entry.amountCents < 0 }">
+              {{ entry.amountCents >= 0 ? '+' : '' }}{{ euros(entry.amountCents) }}
             </td>
-            <td>{{ adj.note }}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h2>Payments</h2>
-      <p v-if="paymentsError" class="error">
-        Could not load payments: {{ paymentsError.message }}
-      </p>
-      <p v-else-if="!payments?.length">No payments yet.</p>
-      <table v-else class="adjustments">
-        <thead>
-          <tr>
-            <th>Due date</th>
-            <th>Label</th>
-            <th>Amount</th>
-            <th>Paid date</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in payments" :key="p.id">
-            <td>{{ p.due_date }}</td>
-            <td>{{ p.label }}</td>
-            <td>{{ euros(p.amount_cents) }}</td>
-            <td>{{ p.paid_date ?? 'unpaid' }}</td>
+            <td>{{ entry.note }}</td>
           </tr>
         </tbody>
       </table>
