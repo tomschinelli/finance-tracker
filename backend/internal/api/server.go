@@ -22,6 +22,7 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /accounts", s.listAccounts)
 	mux.HandleFunc("POST /accounts", s.createAccount)
+	mux.HandleFunc("PATCH /accounts/{id}", s.updateAccount)
 	mux.HandleFunc("POST /accounts/{id}/adjustments", s.createAdjustment)
 	mux.HandleFunc("GET /accounts/{id}/adjustments", s.listAdjustments)
 	mux.HandleFunc("GET /accounts/{id}/payments", s.listAccountPayments)

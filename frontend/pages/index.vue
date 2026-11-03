@@ -53,6 +53,7 @@ function goToday() {
 
 const categoryName = (id: string) => categories.value?.find(c => c.id === id)?.name ?? id
 const accountName = (id: string) => accounts.value?.find(a => a.id === id)?.name ?? id
+const accountNumber = (id: string) => accounts.value?.find(a => a.id === id)?.account_number ?? null
 
 const unpaidPayments = computed(() => overview.value?.payments.filter(p => p.paid_date === null) ?? [])
 const paidPayments = computed(() => overview.value?.payments.filter(p => p.paid_date !== null) ?? [])
@@ -146,7 +147,9 @@ async function onBudgetCreated() {
         <h2>Accounts</h2>
         <ul class="accounts">
           <li v-for="a in overview.accounts" :key="a.account_id">
-            {{ a.name }}: €{{ euros(a.current_balance_cents) }}
+            {{ a.name }}
+            <span v-if="accountNumber(a.account_id)" class="account-number">({{ accountNumber(a.account_id) }})</span>
+            : €{{ euros(a.current_balance_cents) }}
           </li>
         </ul>
       </section>
@@ -321,6 +324,11 @@ async function onBudgetCreated() {
 .accounts {
   list-style: none;
   padding: 0;
+}
+
+.account-number {
+  font-size: 0.85rem;
+  color: #6b7280;
 }
 
 .payments-header {

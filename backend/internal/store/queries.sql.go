@@ -57,19 +57,25 @@ func (q *Queries) ClearRecurringDefinitions(ctx context.Context) error {
 }
 
 const createAccount = `-- name: CreateAccount :one
-insert into accounts (name, starting_balance_cents, currency)
-values ($1, $2, $3)
-returning id, name, starting_balance_cents, currency, created_at, is_default
+insert into accounts (name, starting_balance_cents, currency, account_number)
+values ($1, $2, $3, $4)
+returning id, name, starting_balance_cents, currency, created_at, is_default, account_number
 `
 
 type CreateAccountParams struct {
-	Name                 string `json:"name"`
-	StartingBalanceCents int64  `json:"starting_balance_cents"`
-	Currency             string `json:"currency"`
+	Name                 string      `json:"name"`
+	StartingBalanceCents int64       `json:"starting_balance_cents"`
+	Currency             string      `json:"currency"`
+	AccountNumber        pgtype.Text `json:"account_number"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
-	row := q.db.QueryRow(ctx, createAccount, arg.Name, arg.StartingBalanceCents, arg.Currency)
+	row := q.db.QueryRow(ctx, createAccount,
+		arg.Name,
+		arg.StartingBalanceCents,
+		arg.Currency,
+		arg.AccountNumber,
+	)
 	var i Account
 	err := row.Scan(
 		&i.ID,
@@ -78,6 +84,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Currency,
 		&i.CreatedAt,
 		&i.IsDefault,
+		&i.AccountNumber,
 	)
 	return i, err
 }
@@ -282,7 +289,7 @@ func (q *Queries) FindAdjustmentsByNote(ctx context.Context, note pgtype.Text) (
 }
 
 const getAccount = `-- name: GetAccount :one
-select id, name, starting_balance_cents, currency, created_at, is_default from accounts where id = $1
+select id, name, starting_balance_cents, currency, created_at, is_default, account_number from accounts where id = $1
 `
 
 func (q *Queries) GetAccount(ctx context.Context, id int64) (Account, error) {
@@ -295,6 +302,7 @@ func (q *Queries) GetAccount(ctx context.Context, id int64) (Account, error) {
 		&i.Currency,
 		&i.CreatedAt,
 		&i.IsDefault,
+		&i.AccountNumber,
 	)
 	return i, err
 }
@@ -316,7 +324,7 @@ func (q *Queries) GetCategory(ctx context.Context, id int64) (Category, error) {
 }
 
 const getDefaultAccount = `-- name: GetDefaultAccount :one
-select id, name, starting_balance_cents, currency, created_at, is_default from accounts where is_default = true limit 1
+select id, name, starting_balance_cents, currency, created_at, is_default, account_number from accounts where is_default = true limit 1
 `
 
 func (q *Queries) GetDefaultAccount(ctx context.Context) (Account, error) {
@@ -329,6 +337,7 @@ func (q *Queries) GetDefaultAccount(ctx context.Context) (Account, error) {
 		&i.Currency,
 		&i.CreatedAt,
 		&i.IsDefault,
+		&i.AccountNumber,
 	)
 	return i, err
 }
@@ -394,8 +403,8 @@ func (q *Queries) GetRecurringDefinition(ctx context.Context, id int64) (Recurri
 }
 
 const insertAccountWithID = `-- name: InsertAccountWithID :exec
-insert into accounts (id, name, starting_balance_cents, currency, is_default, created_at)
-values ($1, $2, $3, $4, $5, $6)
+insert into accounts (id, name, starting_balance_cents, currency, is_default, created_at, account_number)
+values ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertAccountWithIDParams struct {
@@ -405,6 +414,7 @@ type InsertAccountWithIDParams struct {
 	Currency             string             `json:"currency"`
 	IsDefault            bool               `json:"is_default"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	AccountNumber        pgtype.Text        `json:"account_number"`
 }
 
 func (q *Queries) InsertAccountWithID(ctx context.Context, arg InsertAccountWithIDParams) error {
@@ -415,6 +425,7 @@ func (q *Queries) InsertAccountWithID(ctx context.Context, arg InsertAccountWith
 		arg.Currency,
 		arg.IsDefault,
 		arg.CreatedAt,
+		arg.AccountNumber,
 	)
 	return err
 }
@@ -590,7 +601,7 @@ func (q *Queries) InsertRecurringDefinitionWithID(ctx context.Context, arg Inser
 }
 
 const listAccounts = `-- name: ListAccounts :many
-select id, name, starting_balance_cents, currency, created_at, is_default from accounts order by id
+select id, name, starting_balance_cents, currency, created_at, is_default, account_number from accounts order by id
 `
 
 func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
@@ -609,6 +620,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 			&i.Currency,
 			&i.CreatedAt,
 			&i.IsDefault,
+			&i.AccountNumber,
 		); err != nil {
 			return nil, err
 		}
@@ -1101,7 +1113,7 @@ func (q *Queries) ListYearlyFrequencyPayments(ctx context.Context, dollar_1 int3
 
 const markAccountDefault = `-- name: MarkAccountDefault :one
 update accounts set is_default = true where id = $1
-returning id, name, starting_balance_cents, currency, created_at, is_default
+returning id, name, starting_balance_cents, currency, created_at, is_default, account_number
 `
 
 func (q *Queries) MarkAccountDefault(ctx context.Context, id int64) (Account, error) {
@@ -1114,6 +1126,7 @@ func (q *Queries) MarkAccountDefault(ctx context.Context, id int64) (Account, er
 		&i.Currency,
 		&i.CreatedAt,
 		&i.IsDefault,
+		&i.AccountNumber,
 	)
 	return i, err
 }
@@ -1253,6 +1266,31 @@ update accounts set is_default = false where is_default = true
 func (q *Queries) UnsetDefaultAccounts(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, unsetDefaultAccounts)
 	return err
+}
+
+const updateAccountNumber = `-- name: UpdateAccountNumber :one
+update accounts set account_number = $2 where id = $1
+returning id, name, starting_balance_cents, currency, created_at, is_default, account_number
+`
+
+type UpdateAccountNumberParams struct {
+	ID            int64       `json:"id"`
+	AccountNumber pgtype.Text `json:"account_number"`
+}
+
+func (q *Queries) UpdateAccountNumber(ctx context.Context, arg UpdateAccountNumberParams) (Account, error) {
+	row := q.db.QueryRow(ctx, updateAccountNumber, arg.ID, arg.AccountNumber)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.StartingBalanceCents,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.IsDefault,
+		&i.AccountNumber,
+	)
+	return i, err
 }
 
 const updatePayment = `-- name: UpdatePayment :one

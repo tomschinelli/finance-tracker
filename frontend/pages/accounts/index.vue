@@ -181,6 +181,7 @@ const showNewAccount = ref(false)
 const newAccountName = ref('')
 const newAccountStartingBalance = ref('')
 const newAccountCurrency = ref('EUR')
+const newAccountNumber = ref('')
 const newAccountSaving = ref(false)
 const newAccountError = ref('')
 
@@ -189,6 +190,7 @@ function openNewAccount() {
   newAccountName.value = ''
   newAccountStartingBalance.value = ''
   newAccountCurrency.value = 'EUR'
+  newAccountNumber.value = ''
   newAccountError.value = ''
 }
 
@@ -199,7 +201,8 @@ async function submitNewAccount() {
     await api.post('/accounts', {
       name: newAccountName.value,
       starting_balance_cents: Math.round(parseFloat(newAccountStartingBalance.value || '0') * 100),
-      currency: newAccountCurrency.value
+      currency: newAccountCurrency.value,
+      account_number: newAccountNumber.value.trim() || null
     })
     showNewAccount.value = false
     await refresh()
@@ -243,6 +246,10 @@ async function submitNewAccount() {
         Currency
         <input v-model="newAccountCurrency" type="text">
       </label>
+      <label>
+        Account number
+        <input v-model="newAccountNumber" type="text">
+      </label>
       <p v-if="newAccountError" class="error">{{ newAccountError }}</p>
       <div class="actions">
         <button type="button" @click="showNewAccount = false">Cancel</button>
@@ -260,6 +267,7 @@ async function submitNewAccount() {
       <li v-for="a in accounts" :key="a.id" class="account">
         <div class="account-row">
           <NuxtLink :to="`/accounts/${a.id}`" class="name">{{ a.name }}</NuxtLink>
+          <span v-if="a.account_number" class="account-number">{{ a.account_number }}</span>
           <span v-if="a.is_default" class="default-badge">default</span>
           <span class="balance">{{ a.currency }} {{ euros(a.current_balance_cents) }}</span>
           <button
@@ -397,6 +405,11 @@ async function submitNewAccount() {
   border: 1px solid #d1d5db;
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
+}
+
+.account-number {
+  font-size: 0.85rem;
+  color: #6b7280;
 }
 
 .adjustment-form {

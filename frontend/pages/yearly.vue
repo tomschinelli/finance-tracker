@@ -30,6 +30,7 @@ function goToday() {
 
 const categoryName = (id: string) => categories.value?.find(c => c.id === id)?.name ?? id
 const accountName = (id: string) => accounts.value?.find(a => a.id === id)?.name ?? id
+const accountNumber = (id: string) => accounts.value?.find(a => a.id === id)?.account_number ?? null
 
 function euros(cents: number) {
   return (cents / 100).toFixed(2)
@@ -85,7 +86,9 @@ async function onRecurringCreated(_definition: RecurringDefinition) {
         <h2>Accounts vs remaining yearly costs</h2>
         <ul class="accounts">
           <li v-for="a in overview.accounts" :key="a.account_id">
-            {{ a.name }}: €{{ euros(a.current_balance_cents) }} balance,
+            {{ a.name }}
+            <span v-if="accountNumber(a.account_id)" class="account-number">({{ accountNumber(a.account_id) }})</span>
+            : €{{ euros(a.current_balance_cents) }} balance,
             €{{ euros(a.remaining_yearly_cost_cents) }} remaining costs
             <strong :class="a.covers_remaining ? 'covers' : 'short'">
               {{ a.covers_remaining ? 'covered' : 'short' }}
@@ -180,6 +183,11 @@ async function onRecurringCreated(_definition: RecurringDefinition) {
 .accounts {
   list-style: none;
   padding: 0;
+}
+
+.account-number {
+  font-size: 0.85rem;
+  color: #6b7280;
 }
 
 .payments-header {

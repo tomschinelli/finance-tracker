@@ -5,27 +5,19 @@ Each item is named by a readable title and carries a feature key
 PRs for traceability (e.g. `feat(backend): allow adjustments on any
 account [FEAT-001]`). Ordered for implementation (not the order first
 given) — work top to bottom unless told otherwise. Bank integration and
-the desktop app are deliberately last: bank import depends on account
-number, and the desktop app is low priority with open design questions.
+the desktop app are deliberately last: bank import needs its format
+details, and the desktop app is low priority with open design questions.
 Update this file as items are completed (strike through or remove) or
 re-scoped.
-
-## Account number per account (FEAT-003)
-
-Add an `account_number` field to `accounts` (migration + `sqlc generate` +
-API + frontend). Groundwork for bank statement import — bank import needs
-to match imported transactions/statements to the right account.
-
-No dependencies, but must land before bank statement import (FEAT-005).
 
 ## Bank statement import, first: KBC Belgium (FEAT-005)
 
 Introduce a per-import (or per-account) "bank type" so multiple bank
 formats can be added over time; first supported importer is KBC
-(Belgium). Depends on **account number per account** (FEAT-003) for
-matching imported rows to the right account. Format/parsing details to be
-provided later — don't build a generic importer abstraction before the
-first concrete format is known.
+(Belgium). Accounts now carry an `account_number` to match imported rows
+to the right account. Format/parsing details to be provided later — don't
+build a generic importer abstraction before the first concrete format is
+known.
 
 ## Point-in-time snapshot / rollback (FEAT-007)
 

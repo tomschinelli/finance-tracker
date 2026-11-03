@@ -14,12 +14,27 @@ import (
 )
 
 type accountResponse struct {
-	ID                   int64  `json:"id"`
-	Name                 string `json:"name"`
-	Currency             string `json:"currency"`
-	StartingBalanceCents int64  `json:"starting_balance_cents"`
-	CurrentBalanceCents  int64  `json:"current_balance_cents"`
-	IsDefault            bool   `json:"is_default"`
+	ID                   int64   `json:"id"`
+	Name                 string  `json:"name"`
+	Currency             string  `json:"currency"`
+	StartingBalanceCents int64   `json:"starting_balance_cents"`
+	CurrentBalanceCents  int64   `json:"current_balance_cents"`
+	IsDefault            bool    `json:"is_default"`
+	AccountNumber        *string `json:"account_number"`
+}
+
+func accountNumberPtr(a pgtype.Text) *string {
+	if !a.Valid {
+		return nil
+	}
+	return &a.String
+}
+
+func textFromPtr(s *string) pgtype.Text {
+	if s == nil {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *s, Valid: true}
 }
 
 func (s *Server) accountBalance(ctx context.Context, acct store.Account) (int64, error) {
@@ -55,15 +70,17 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 			StartingBalanceCents: a.StartingBalanceCents,
 			CurrentBalanceCents:  bal,
 			IsDefault:            a.IsDefault,
+			AccountNumber:        accountNumberPtr(a.AccountNumber),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 type createAccountRequest struct {
-	Name                 string `json:"name"`
-	StartingBalanceCents int64  `json:"starting_balance_cents"`
-	Currency             string `json:"currency"`
+	Name                 string  `json:"name"`
+	StartingBalanceCents int64   `json:"starting_balance_cents"`
+	Currency             string  `json:"currency"`
+	AccountNumber        *string `json:"account_number"`
 }
 
 func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +110,7 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 		Name:                 req.Name,
 		StartingBalanceCents: req.StartingBalanceCents,
 		Currency:             req.Currency,
+		AccountNumber:        textFromPtr(req.AccountNumber),
 	})
 	if err != nil {
 		handleDBError(w, err)
@@ -126,6 +144,7 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 		StartingBalanceCents: acct.StartingBalanceCents,
 		CurrentBalanceCents:  acct.StartingBalanceCents,
 		IsDefault:            acct.IsDefault,
+		AccountNumber:        accountNumberPtr(acct.AccountNumber),
 	})
 }
 
@@ -175,6 +194,49 @@ func (s *Server) setDefaultAccount(w http.ResponseWriter, r *http.Request) {
 		StartingBalanceCents: acct.StartingBalanceCents,
 		CurrentBalanceCents:  bal,
 		IsDefault:            acct.IsDefault,
+		AccountNumber:        accountNumberPtr(acct.AccountNumber),
+	})
+}
+
+type updateAccountRequest struct {
+	AccountNumber *string `json:"account_number"`
+}
+
+func (s *Server) updateAccount(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid account id")
+		return
+	}
+
+	var req updateAccountRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	acct, err := s.q.UpdateAccountNumber(r.Context(), store.UpdateAccountNumberParams{
+		ID:            id,
+		AccountNumber: textFromPtr(req.AccountNumber),
+	})
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+
+	bal, err := s.accountBalance(r.Context(), acct)
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, accountResponse{
+		ID:                   acct.ID,
+		Name:                 acct.Name,
+		Currency:             acct.Currency,
+		StartingBalanceCents: acct.StartingBalanceCents,
+		CurrentBalanceCents:  bal,
+		IsDefault:            acct.IsDefault,
+		AccountNumber:        accountNumberPtr(acct.AccountNumber),
 	})
 }
 

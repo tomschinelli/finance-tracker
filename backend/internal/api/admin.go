@@ -22,12 +22,13 @@ type exportPayload struct {
 }
 
 type exportAccount struct {
-	ID                   int64  `json:"id"`
-	Name                 string `json:"name"`
-	StartingBalanceCents int64  `json:"starting_balance_cents"`
-	Currency             string `json:"currency"`
-	IsDefault            bool   `json:"is_default"`
-	CreatedAt            string `json:"created_at"`
+	ID                   int64   `json:"id"`
+	Name                 string  `json:"name"`
+	StartingBalanceCents int64   `json:"starting_balance_cents"`
+	Currency             string  `json:"currency"`
+	IsDefault            bool    `json:"is_default"`
+	CreatedAt            string  `json:"created_at"`
+	AccountNumber        *string `json:"account_number"`
 }
 
 type exportCategory struct {
@@ -116,6 +117,7 @@ func (s *Server) exportData(w http.ResponseWriter, r *http.Request) {
 			Currency:             a.Currency,
 			IsDefault:            a.IsDefault,
 			CreatedAt:            a.CreatedAt.Time.Format(time.RFC3339),
+			AccountNumber:        accountNumberPtr(a.AccountNumber),
 		})
 	}
 	for _, c := range categories {
@@ -238,6 +240,7 @@ func (s *Server) importData(w http.ResponseWriter, r *http.Request) {
 			Currency:             a.Currency,
 			IsDefault:            a.IsDefault,
 			CreatedAt:            pgtype.Timestamptz{Time: createdAt, Valid: true},
+			AccountNumber:        textFromPtr(a.AccountNumber),
 		}); err != nil {
 			handleDBError(w, err)
 			return

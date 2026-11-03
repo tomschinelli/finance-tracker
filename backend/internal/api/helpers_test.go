@@ -72,12 +72,13 @@ func requireStatus(t *testing.T, resp *http.Response, want int) {
 // --- shared response DTOs (black-box mirrors of the unexported api types) ---
 
 type accountDTO struct {
-	ID                   int64  `json:"id"`
-	Name                 string `json:"name"`
-	Currency             string `json:"currency"`
-	StartingBalanceCents int64  `json:"starting_balance_cents"`
-	CurrentBalanceCents  int64  `json:"current_balance_cents"`
-	IsDefault            bool   `json:"is_default"`
+	ID                   int64   `json:"id"`
+	Name                 string  `json:"name"`
+	Currency             string  `json:"currency"`
+	StartingBalanceCents int64   `json:"starting_balance_cents"`
+	CurrentBalanceCents  int64   `json:"current_balance_cents"`
+	IsDefault            bool    `json:"is_default"`
+	AccountNumber        *string `json:"account_number"`
 }
 
 type categoryDTO struct {

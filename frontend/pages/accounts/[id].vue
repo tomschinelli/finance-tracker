@@ -5,12 +5,40 @@ const route = useRoute()
 const id = route.params.id as string
 const api = useApi()
 
-const { data: accounts, error: accountsError } = await useAsyncData<Account[]>(
+const { data: accounts, error: accountsError, refresh: refreshAccounts } = await useAsyncData<Account[]>(
   'accounts',
   () => api.get('/accounts'),
   { default: () => [] }
 )
 const account = computed(() => accounts.value?.find(a => String(a.id) === id))
+
+const editingAccountNumber = ref(false)
+const accountNumberInput = ref('')
+const accountNumberSaving = ref(false)
+const accountNumberError = ref('')
+
+function openAccountNumberEdit() {
+  accountNumberInput.value = account.value?.account_number ?? ''
+  accountNumberError.value = ''
+  editingAccountNumber.value = true
+}
+
+async function saveAccountNumber() {
+  if (!account.value) return
+  accountNumberSaving.value = true
+  accountNumberError.value = ''
+  try {
+    await api.patch(`/accounts/${account.value.id}`, {
+      account_number: accountNumberInput.value.trim() || null
+    })
+    editingAccountNumber.value = false
+    await refreshAccounts()
+  } catch (err: any) {
+    accountNumberError.value = err.message
+  } finally {
+    accountNumberSaving.value = false
+  }
+}
 
 const { data: adjustments, error: adjustmentsError } = await useAsyncData<AccountAdjustment[]>(
   `account-${id}-adjustments`,
@@ -84,6 +112,25 @@ function euros(cents: number) {
           <span class="label">Starting balance</span>
           <span class="value">{{ account.currency }} {{ euros(account.starting_balance_cents) }}</span>
         </div>
+        <div class="summary-item">
+          <span class="label">Account number</span>
+          <template v-if="!editingAccountNumber">
+            <span class="value account-number-row">
+              {{ account.account_number ?? 'Not set' }}
+              <button type="button" @click="openAccountNumberEdit">Edit</button>
+            </span>
+          </template>
+          <div v-else class="account-number-edit">
+            <input v-model="accountNumberInput" type="text">
+            <p v-if="accountNumberError" class="error">{{ accountNumberError }}</p>
+            <div class="actions">
+              <button type="button" @click="editingAccountNumber = false">Cancel</button>
+              <button type="button" :disabled="accountNumberSaving" @click="saveAccountNumber">
+                {{ accountNumberSaving ? 'Saving...' : 'Save' }}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <h2>Adjustment history</h2>
@@ -146,6 +193,24 @@ function euros(cents: number) {
 .summary-item .value {
   font-size: 1.25rem;
   font-weight: 600;
+}
+
+.account-number-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.account-number-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.account-number-edit .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 .adjustments {

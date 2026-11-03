@@ -1,6 +1,6 @@
 -- name: CreateAccount :one
-insert into accounts (name, starting_balance_cents, currency)
-values ($1, $2, $3)
+insert into accounts (name, starting_balance_cents, currency, account_number)
+values ($1, $2, $3, $4)
 returning *;
 
 -- name: ListAccounts :many
@@ -17,6 +17,10 @@ update accounts set is_default = false where is_default = true;
 
 -- name: MarkAccountDefault :one
 update accounts set is_default = true where id = $1
+returning *;
+
+-- name: UpdateAccountNumber :one
+update accounts set account_number = $2 where id = $1
 returning *;
 
 -- name: SumPaidPaymentsByAccount :one
@@ -186,8 +190,8 @@ delete from accounts;
 delete from categories;
 
 -- name: InsertAccountWithID :exec
-insert into accounts (id, name, starting_balance_cents, currency, is_default, created_at)
-values ($1, $2, $3, $4, $5, $6);
+insert into accounts (id, name, starting_balance_cents, currency, is_default, created_at, account_number)
+values ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: InsertCategoryWithID :exec
 insert into categories (id, name, kind, is_default)

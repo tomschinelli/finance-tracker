@@ -23,6 +23,49 @@ func TestCreateAccount_FirstAccountBecomesDefault(t *testing.T) {
 	}
 }
 
+func TestCreateAccount_WithAccountNumber(t *testing.T) {
+	srv := newTestServer(t)
+	h := srv.Routes()
+
+	resp := do(t, h, "POST", "/accounts", map[string]any{
+		"name":                   "Savings",
+		"starting_balance_cents": 0,
+		"account_number":         "BE68539007547034",
+	})
+	requireStatus(t, resp, http.StatusCreated)
+	var acct accountDTO
+	decodeBody(t, resp, &acct)
+	if acct.AccountNumber == nil || *acct.AccountNumber != "BE68539007547034" {
+		t.Fatalf("account_number = %v, want BE68539007547034", acct.AccountNumber)
+	}
+}
+
+func TestUpdateAccount_SetsAndClearsAccountNumber(t *testing.T) {
+	srv := newTestServer(t)
+	h := srv.Routes()
+
+	acct := createAccount(t, h, "Savings", 0)
+	if acct.AccountNumber != nil {
+		t.Fatalf("account_number = %v, want nil for a newly created account without one", acct.AccountNumber)
+	}
+
+	resp := do(t, h, "PATCH", "/accounts/"+itoa(acct.ID), map[string]any{"account_number": "BE68539007547034"})
+	requireStatus(t, resp, http.StatusOK)
+	var updated accountDTO
+	decodeBody(t, resp, &updated)
+	if updated.AccountNumber == nil || *updated.AccountNumber != "BE68539007547034" {
+		t.Fatalf("account_number = %v, want BE68539007547034", updated.AccountNumber)
+	}
+
+	resp = do(t, h, "PATCH", "/accounts/"+itoa(acct.ID), map[string]any{"account_number": nil})
+	requireStatus(t, resp, http.StatusOK)
+	var cleared accountDTO
+	decodeBody(t, resp, &cleared)
+	if cleared.AccountNumber != nil {
+		t.Fatalf("account_number = %v, want nil after clearing", cleared.AccountNumber)
+	}
+}
+
 func TestCreateAccount_NameRequired(t *testing.T) {
 	srv := newTestServer(t)
 	h := srv.Routes()

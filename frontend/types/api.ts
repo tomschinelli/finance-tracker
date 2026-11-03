@@ -5,6 +5,7 @@ export interface Account {
   starting_balance_cents: number
   current_balance_cents: number
   is_default: boolean
+  account_number: string | null
 }
 
 export interface AccountAdjustment {
@@ -83,6 +84,7 @@ export interface ExportData {
     currency: string
     is_default: boolean
     created_at: string
+    account_number: string | null
   }[]
   categories: Category[]
   recurring_definitions: (RecurringDefinition & { created_at: string })[]
