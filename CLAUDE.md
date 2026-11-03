@@ -10,6 +10,20 @@ backend, PostgreSQL storage. Single user, no auth in v1.
 Read `docs/ARCHITECTURE.md` before touching backend or frontend structure.
 Read `docs/DECISIONS.md` before re-deciding something that's already settled.
 
+## Keeping README.md current
+
+`README.md` is a visitor's first contact — keep it short (what the app
+does, the stack, quick start, links). Don't bloat it with detail that
+belongs in `docs/`. After a change that affects what README.md says or
+links to, update it:
+
+- New top-level doc added to `docs/` → add one link under "Docs".
+- Stack/architecture change visible at a glance (new major component,
+  changed quick-start command) → update the relevant line or link target.
+- Everything else (schema detail, domain rules, rationale) goes in
+  `docs/ARCHITECTURE.md` / `docs/DECISIONS.md`, referenced from the README,
+  never inlined into it.
+
 ## Ground rules
 
 1. **Verify, don't assume.** Check actual code, docs, or tool output before
