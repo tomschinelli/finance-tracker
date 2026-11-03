@@ -40,6 +40,13 @@ from a custom spreadsheet. Depends on **point-in-time snapshot/rollback**
 undoable. Scope (which resources/operations are exposed, auth/access
 control for the MCP endpoint) to be defined when we get here.
 
+## Account type: debit, prepaid credit, credit card (FEAT-009)
+
+Add a `type` field to accounts (e.g. debit card, prepaid credit card,
+credit card) to capture more detail about how each account is held.
+Independent of the `account_number` field already added for bank import
+matching (FEAT-005).
+
 ## Desktop app: single Go binary — low priority (FEAT-006)
 
 - New `cmd/` entrypoint (e.g. `cmd/desktop`) producing a single binary,
