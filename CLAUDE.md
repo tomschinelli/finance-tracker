@@ -29,6 +29,11 @@ Read `docs/DECISIONS.md` before re-deciding something that's already settled.
    or technical decision is made, add one entry to `docs/DECISIONS.md`.
    Only essential decisions go there — not implementation detail that's
    obvious from reading the code.
+8. **Verify at the lowest cost that proves the fix.** Prefer a `curl`/`psql`
+   check or a unit test over a full container rebuild, and a rebuild over a
+   browser round-trip. Only drive the browser for UI-specific behavior that
+   can't be confirmed another way, and batch those actions into as few
+   tool calls as possible instead of one screenshot per step.
 
 ## Stack
 
