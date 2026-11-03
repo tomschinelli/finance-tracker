@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { Account, Category, RecurringDefinition, RecurringFrequency } from '~/types/api'
+import type { Account, Category, RecurringDefinition } from '~/types/api'
 
 const props = defineProps<{
   categories: Category[]
   accounts: Account[]
-  fixedFrequency?: RecurringFrequency
+  fixedIntervalMonths?: number
 }>()
 
 const emit = defineEmits<{
@@ -16,14 +16,27 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function intervalKindFor(months?: number): 'monthly' | 'yearly' | 'custom' {
+  if (months === 12) return 'yearly'
+  if (months === undefined || months === 1) return 'monthly'
+  return 'custom'
+}
+
 const label = ref('')
 const categoryId = ref('')
 const accountId = ref('')
 const amount = ref('')
-const frequency = ref<RecurringFrequency>(props.fixedFrequency ?? 'monthly')
+const intervalKind = ref<'monthly' | 'yearly' | 'custom'>(intervalKindFor(props.fixedIntervalMonths))
+const customInterval = ref(String(props.fixedIntervalMonths ?? 2))
 const anchorDate = ref(todayIso())
 const saving = ref(false)
 const error = ref('')
+
+const intervalMonths = computed(() => {
+  if (intervalKind.value === 'monthly') return 1
+  if (intervalKind.value === 'yearly') return 12
+  return parseInt(customInterval.value, 10)
+})
 
 const api = useApi()
 
@@ -40,7 +53,7 @@ async function submit() {
       category_id: categoryId.value,
       account_id: accountId.value,
       amount_cents: Math.round(parseFloat(amount.value) * 100),
-      frequency: frequency.value,
+      interval_months: intervalMonths.value,
       anchor_date: anchorDate.value,
       active: true
     })
@@ -81,11 +94,15 @@ async function submit() {
       </label>
       <label>
         Frequency
-        <select v-model="frequency" :disabled="!!fixedFrequency">
+        <select v-model="intervalKind" :disabled="fixedIntervalMonths !== undefined">
           <option value="monthly">monthly</option>
-          <option value="quarterly">quarterly</option>
           <option value="yearly">yearly</option>
+          <option value="custom">custom interval</option>
         </select>
+      </label>
+      <label v-if="intervalKind === 'custom'">
+        Every how many months
+        <input v-model="customInterval" type="number" min="1" step="1" :disabled="fixedIntervalMonths !== undefined">
       </label>
       <label>
         Anchor date

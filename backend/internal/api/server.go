@@ -31,6 +31,8 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /categories", s.listCategories)
 	mux.HandleFunc("POST /categories", s.createCategory)
+	mux.HandleFunc("PATCH /categories/{id}", s.renameCategory)
+	mux.HandleFunc("DELETE /categories/{id}", s.deleteCategory)
 
 	mux.HandleFunc("GET /recurring", s.listRecurring)
 	mux.HandleFunc("POST /recurring", s.createRecurring)
@@ -43,6 +45,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /overview/yearly", s.overviewYearly)
 	mux.HandleFunc("GET /overview/monthly", s.overviewMonthly)
 
+	mux.HandleFunc("POST /data/clear", s.clearData)
+	mux.HandleFunc("GET /data/export", s.exportData)
+	mux.HandleFunc("POST /data/import", s.importData)
+
 	return withCORS(mux)
 }
 
@@ -52,7 +58,7 @@ func (s *Server) Routes() http.Handler {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

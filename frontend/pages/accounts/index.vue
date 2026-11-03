@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Account } from '~/types/api'
+import type { Account, ExportData } from '~/types/api'
 
 const api = useApi()
 
@@ -104,6 +104,76 @@ async function setDefault(account: Account) {
   }
 }
 
+const clearing = ref(false)
+
+async function clearData() {
+  if (!confirm('Clear ALL data, including accounts and categories? The database will be completely empty afterwards. This cannot be undone.')) {
+    return
+  }
+  clearing.value = true
+  error.value = ''
+  try {
+    await api.post('/data/clear', {})
+    await refresh()
+  } catch (err: any) {
+    error.value = err.message
+  } finally {
+    clearing.value = false
+  }
+}
+
+const exporting = ref(false)
+
+async function exportData() {
+  exporting.value = true
+  error.value = ''
+  try {
+    const data = await api.get<ExportData>('/data/export')
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `finance-export-${todayIso()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err: any) {
+    error.value = err.message
+  } finally {
+    exporting.value = false
+  }
+}
+
+const importing = ref(false)
+const importInput = ref<HTMLInputElement | null>(null)
+
+function triggerImport() {
+  importInput.value?.click()
+}
+
+async function handleImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  if (!confirm('Import this file? It will replace ALL data, including accounts and categories, and cannot be undone.')) {
+    return
+  }
+
+  importing.value = true
+  error.value = ''
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    await api.post('/data/import', data)
+    await refresh()
+  } catch (err: any) {
+    error.value = err.message
+  } finally {
+    importing.value = false
+  }
+}
+
 const showNewAccount = ref(false)
 const newAccountName = ref('')
 const newAccountStartingBalance = ref('')
@@ -142,7 +212,19 @@ async function submitNewAccount() {
   <div>
     <div class="header-row">
       <h1>Accounts</h1>
-      <button type="button" @click="openNewAccount">Add account</button>
+      <div class="header-actions">
+        <input ref="importInput" type="file" accept="application/json" class="hidden-input" @change="handleImportFile">
+        <button type="button" :disabled="exporting" @click="exportData">
+          {{ exporting ? 'Exporting...' : 'Export data' }}
+        </button>
+        <button type="button" :disabled="importing" @click="triggerImport">
+          {{ importing ? 'Importing...' : 'Import data' }}
+        </button>
+        <button type="button" class="danger" :disabled="clearing" @click="clearData">
+          {{ clearing ? 'Clearing...' : 'Clear data' }}
+        </button>
+        <button type="button" @click="openNewAccount">Add account</button>
+      </div>
     </div>
 
     <div v-if="showNewAccount" class="new-account-form">
@@ -227,6 +309,20 @@ async function submitNewAccount() {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.danger {
+  color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.hidden-input {
+  display: none;
 }
 
 .new-account-form {

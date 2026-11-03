@@ -1,20 +1,51 @@
 <script setup lang="ts">
-import type { Account, Category, RecurringDefinition, RecurringFrequency } from '~/types/api'
+import type { Account, Category, RecurringDefinition } from '~/types/api'
 
 const api = useApi()
 
+const tagFilter = ref('')
+
 const { data: recurring, error: recurringError, refresh } = await useAsyncData<RecurringDefinition[]>(
   'recurring',
-  () => api.get('/recurring'),
-  { default: () => [] }
+  () => api.get(tagFilter.value ? `/recurring?tag=${encodeURIComponent(tagFilter.value)}` : '/recurring'),
+  { default: () => [], watch: [tagFilter] }
 )
 const { data: categories } = await useAsyncData<Category[]>('categories', () => api.get('/categories'), { default: () => [] })
 const { data: accounts } = await useAsyncData<Account[]>('accounts', () => api.get('/accounts'), { default: () => [] })
 
 const categoryName = (id: string) => categories.value?.find(c => c.id === id)?.name ?? id
 
+const allTags = computed(() => {
+  const set = new Set<string>()
+  for (const def of recurring.value ?? []) {
+    for (const tag of def.tags) set.add(tag)
+  }
+  return [...set].sort()
+})
+
 function euros(cents: number) {
   return (cents / 100).toFixed(2)
+}
+
+function intervalLabel(months: number) {
+  if (months === 1) return 'Monthly'
+  if (months === 12) return 'Yearly'
+  return `Every ${months} months`
+}
+
+function tagsToText(tags: string[]) {
+  return tags.join(', ')
+}
+
+function textToTags(text: string) {
+  return text.split(',').map(t => t.trim()).filter(Boolean)
+}
+
+async function updateTags(def: RecurringDefinition, text: string) {
+  const tags = textToTags(text)
+  if (JSON.stringify(tags) === JSON.stringify(def.tags)) return
+  await api.patch(`/recurring/${def.id}`, { tags })
+  await refresh()
 }
 
 async function toggleActive(def: RecurringDefinition) {
@@ -39,10 +70,18 @@ const newLabel = ref('')
 const newCategoryId = ref('')
 const newAccountId = ref('')
 const newAmount = ref('')
-const newFrequency = ref<RecurringFrequency>('monthly')
+const newIntervalKind = ref<'monthly' | 'yearly' | 'custom'>('monthly')
+const newCustomInterval = ref('2')
 const newAnchorDate = ref(new Date().toISOString().slice(0, 10))
+const newTags = ref('')
 const creating = ref(false)
 const createError = ref('')
+
+const newIntervalMonths = computed(() => {
+  if (newIntervalKind.value === 'monthly') return 1
+  if (newIntervalKind.value === 'yearly') return 12
+  return parseInt(newCustomInterval.value, 10)
+})
 
 async function createRecurring() {
   creating.value = true
@@ -53,14 +92,16 @@ async function createRecurring() {
       category_id: newCategoryId.value,
       account_id: newAccountId.value,
       amount_cents: Math.round(parseFloat(newAmount.value) * 100),
-      frequency: newFrequency.value,
+      interval_months: newIntervalMonths.value,
       anchor_date: newAnchorDate.value,
-      active: true
+      active: true,
+      tags: textToTags(newTags.value)
     })
     newLabel.value = ''
     newCategoryId.value = ''
     newAccountId.value = ''
     newAmount.value = ''
+    newTags.value = ''
     await refresh()
   } catch (err: any) {
     createError.value = err.message
@@ -73,6 +114,17 @@ async function createRecurring() {
 <template>
   <div>
     <h1>Recurring definitions</h1>
+
+    <div class="filter-row">
+      <label>
+        Filter by tag
+        <input v-model="tagFilter" type="text" list="known-tags" placeholder="e.g. housing">
+        <datalist id="known-tags">
+          <option v-for="tag in allTags" :key="tag" :value="tag" />
+        </datalist>
+      </label>
+      <button v-if="tagFilter" type="button" @click="tagFilter = ''">Clear</button>
+    </div>
 
     <p v-if="recurringError" class="error">
       Could not load recurring definitions: {{ recurringError.message }}
@@ -87,6 +139,7 @@ async function createRecurring() {
           <th>Amount</th>
           <th>Frequency</th>
           <th>Anchor date</th>
+          <th>Tags</th>
           <th>Active</th>
         </tr>
       </thead>
@@ -105,8 +158,14 @@ async function createRecurring() {
               @change="updateAmount(def, ($event.target as HTMLInputElement).value)"
             >
           </td>
-          <td>{{ def.frequency }}</td>
+          <td>{{ intervalLabel(def.interval_months) }}</td>
           <td>{{ def.anchor_date }}</td>
+          <td>
+            <input
+              type="text" :value="tagsToText(def.tags)" placeholder="comma-separated"
+              @change="updateTags(def, ($event.target as HTMLInputElement).value)"
+            >
+          </td>
           <td>
             <input type="checkbox" :checked="def.active" @change="toggleActive(def)">
           </td>
@@ -140,11 +199,19 @@ async function createRecurring() {
       </label>
       <label>
         Frequency
-        <select v-model="newFrequency">
+        <select v-model="newIntervalKind">
           <option value="monthly">monthly</option>
-          <option value="quarterly">quarterly</option>
           <option value="yearly">yearly</option>
+          <option value="custom">custom interval</option>
         </select>
+      </label>
+      <label v-if="newIntervalKind === 'custom'">
+        Every how many months
+        <input v-model="newCustomInterval" type="number" min="1" step="1" required>
+      </label>
+      <label>
+        Tags
+        <input v-model="newTags" type="text" placeholder="comma-separated">
       </label>
       <label>
         Anchor date
@@ -157,6 +224,20 @@ async function createRecurring() {
 </template>
 
 <style scoped>
+.filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.filter-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
 .recurring-table {
   width: 100%;
   border-collapse: collapse;

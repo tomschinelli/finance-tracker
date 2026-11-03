@@ -59,8 +59,8 @@ async function submit() {
       <h2>Add budget to account</h2>
       <p>
         This moves the amount below from the account you pick into the chosen account, and
-        marks the budget as set for this month. It defaults to this month's estimated costs
-        (€{{ euros(amountCents) }}), but can be overridden.
+        marks the budget as set for this month. It defaults to this month's predicted costs
+        plus the non-monthly buffer (€{{ euros(amountCents) }} total), but can be overridden.
       </p>
       <label>
         From account

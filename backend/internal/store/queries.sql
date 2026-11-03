@@ -52,13 +52,31 @@ select * from categories order by id;
 -- name: GetCategory :one
 select * from categories where id = $1;
 
+-- name: GetDefaultCategory :one
+select * from categories where is_default = true limit 1;
+
+-- name: CreateDefaultCategory :one
+insert into categories (name, kind, is_default)
+values ('Others', 'expense', true)
+returning *;
+
+-- name: RenameCategory :one
+update categories set name = $2 where id = $1
+returning *;
+
+-- name: DeleteCategory :exec
+delete from categories where id = $1;
+
 -- name: CreateRecurringDefinition :one
-insert into recurring_definitions (label, category_id, account_id, amount_cents, frequency, anchor_date, active)
-values ($1, $2, $3, $4, $5, $6, $7)
+insert into recurring_definitions (label, category_id, account_id, amount_cents, interval_months, anchor_date, active, tags)
+values ($1, $2, $3, $4, $5, $6, $7, $8)
 returning *;
 
 -- name: ListRecurringDefinitions :many
 select * from recurring_definitions order by id;
+
+-- name: ListRecurringDefinitionsByTag :many
+select * from recurring_definitions where sqlc.arg('tag')::text = any(tags) order by id;
 
 -- name: ListActiveRecurringDefinitions :many
 select * from recurring_definitions where active = true order by id;
@@ -70,7 +88,8 @@ select * from recurring_definitions where id = $1;
 update recurring_definitions set
   amount_cents = coalesce(sqlc.narg('amount_cents'), amount_cents),
   account_id = coalesce(sqlc.narg('account_id'), account_id),
-  active = coalesce(sqlc.narg('active'), active)
+  active = coalesce(sqlc.narg('active'), active),
+  tags = coalesce(sqlc.narg('tags'), tags)
 where id = sqlc.arg('id')
 returning *;
 
@@ -106,7 +125,7 @@ order by due_date, id;
 -- name: ListYearlyFrequencyPayments :many
 select p.* from payments p
 join recurring_definitions rd on rd.id = p.recurring_definition_id
-where rd.frequency = 'yearly' and extract(year from p.due_date) = $1::int
+where rd.interval_months = 12 and extract(year from p.due_date) = $1::int
 order by p.due_date, p.id;
 
 -- name: UpdatePayment :one
@@ -119,9 +138,65 @@ update payments set
 where id = sqlc.arg('id')
 returning *;
 
--- name: SumActiveDefinitionsByFrequencyKind :many
-select rd.frequency, c.kind, coalesce(sum(rd.amount_cents), 0)::bigint as total
+-- name: ListAllPayments :many
+select * from payments order by id;
+
+-- name: ListAllBalanceAdjustments :many
+select * from balance_adjustments order by id;
+
+-- name: ClearPayments :exec
+delete from payments;
+
+-- name: ClearRecurringDefinitions :exec
+delete from recurring_definitions;
+
+-- name: ClearBalanceAdjustments :exec
+delete from balance_adjustments;
+
+-- name: ClearAccounts :exec
+delete from accounts;
+
+-- name: ClearCategories :exec
+delete from categories;
+
+-- name: InsertAccountWithID :exec
+insert into accounts (id, name, starting_balance_cents, currency, is_default, created_at)
+values ($1, $2, $3, $4, $5, $6);
+
+-- name: InsertCategoryWithID :exec
+insert into categories (id, name, kind, is_default)
+values ($1, $2, $3, $4);
+
+-- name: InsertRecurringDefinitionWithID :exec
+insert into recurring_definitions (id, label, category_id, account_id, amount_cents, interval_months, anchor_date, active, created_at, tags)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
+
+-- name: InsertPaymentWithID :exec
+insert into payments (id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- name: InsertBalanceAdjustmentWithID :exec
+insert into balance_adjustments (id, account_id, amount_cents, note, occurred_on, created_at)
+values ($1, $2, $3, $4, $5, $6);
+
+-- name: ResetAccountsSeq :exec
+select setval(pg_get_serial_sequence('accounts', 'id'), coalesce((select max(id) from accounts), 1), (select max(id) from accounts) is not null);
+
+-- name: ResetCategoriesSeq :exec
+select setval(pg_get_serial_sequence('categories', 'id'), coalesce((select max(id) from categories), 1), (select max(id) from categories) is not null);
+
+-- name: ResetRecurringDefinitionsSeq :exec
+select setval(pg_get_serial_sequence('recurring_definitions', 'id'), coalesce((select max(id) from recurring_definitions), 1), (select max(id) from recurring_definitions) is not null);
+
+-- name: ResetPaymentsSeq :exec
+select setval(pg_get_serial_sequence('payments', 'id'), coalesce((select max(id) from payments), 1), (select max(id) from payments) is not null);
+
+-- name: ResetBalanceAdjustmentsSeq :exec
+select setval(pg_get_serial_sequence('balance_adjustments', 'id'), coalesce((select max(id) from balance_adjustments), 1), (select max(id) from balance_adjustments) is not null);
+
+-- name: SumActiveDefinitionsByIntervalKind :many
+select rd.interval_months, c.kind, coalesce(sum(rd.amount_cents), 0)::bigint as total
 from recurring_definitions rd
 join categories c on c.id = rd.category_id
 where rd.active = true
-group by rd.frequency, c.kind;
+group by rd.interval_months, c.kind;

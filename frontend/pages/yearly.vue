@@ -124,7 +124,7 @@ async function onRecurringCreated(_definition: RecurringDefinition) {
       v-if="showAddRecurring"
       :categories="categories ?? []"
       :accounts="accounts ?? []"
-      fixed-frequency="yearly"
+      :fixed-interval-months="12"
       @close="showAddRecurring = false"
       @created="onRecurringCreated"
     />

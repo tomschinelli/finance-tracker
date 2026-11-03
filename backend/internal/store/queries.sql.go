@@ -11,6 +11,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearAccounts = `-- name: ClearAccounts :exec
+delete from accounts
+`
+
+func (q *Queries) ClearAccounts(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, clearAccounts)
+	return err
+}
+
+const clearBalanceAdjustments = `-- name: ClearBalanceAdjustments :exec
+delete from balance_adjustments
+`
+
+func (q *Queries) ClearBalanceAdjustments(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, clearBalanceAdjustments)
+	return err
+}
+
+const clearCategories = `-- name: ClearCategories :exec
+delete from categories
+`
+
+func (q *Queries) ClearCategories(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, clearCategories)
+	return err
+}
+
+const clearPayments = `-- name: ClearPayments :exec
+delete from payments
+`
+
+func (q *Queries) ClearPayments(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, clearPayments)
+	return err
+}
+
+const clearRecurringDefinitions = `-- name: ClearRecurringDefinitions :exec
+delete from recurring_definitions
+`
+
+func (q *Queries) ClearRecurringDefinitions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, clearRecurringDefinitions)
+	return err
+}
+
 const createAccount = `-- name: CreateAccount :one
 insert into accounts (name, starting_balance_cents, currency)
 values ($1, $2, $3)
@@ -72,7 +117,7 @@ func (q *Queries) CreateAdjustment(ctx context.Context, arg CreateAdjustmentPara
 const createCategory = `-- name: CreateCategory :one
 insert into categories (name, kind)
 values ($1, $2)
-returning id, name, kind
+returning id, name, kind, is_default
 `
 
 type CreateCategoryParams struct {
@@ -83,7 +128,30 @@ type CreateCategoryParams struct {
 func (q *Queries) CreateCategory(ctx context.Context, arg CreateCategoryParams) (Category, error) {
 	row := q.db.QueryRow(ctx, createCategory, arg.Name, arg.Kind)
 	var i Category
-	err := row.Scan(&i.ID, &i.Name, &i.Kind)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.IsDefault,
+	)
+	return i, err
+}
+
+const createDefaultCategory = `-- name: CreateDefaultCategory :one
+insert into categories (name, kind, is_default)
+values ('Others', 'expense', true)
+returning id, name, kind, is_default
+`
+
+func (q *Queries) CreateDefaultCategory(ctx context.Context) (Category, error) {
+	row := q.db.QueryRow(ctx, createDefaultCategory)
+	var i Category
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.IsDefault,
+	)
 	return i, err
 }
 
@@ -127,19 +195,20 @@ func (q *Queries) CreatePayment(ctx context.Context, arg CreatePaymentParams) (P
 }
 
 const createRecurringDefinition = `-- name: CreateRecurringDefinition :one
-insert into recurring_definitions (label, category_id, account_id, amount_cents, frequency, anchor_date, active)
-values ($1, $2, $3, $4, $5, $6, $7)
-returning id, label, category_id, account_id, amount_cents, frequency, anchor_date, active, created_at
+insert into recurring_definitions (label, category_id, account_id, amount_cents, interval_months, anchor_date, active, tags)
+values ($1, $2, $3, $4, $5, $6, $7, $8)
+returning id, label, category_id, account_id, amount_cents, anchor_date, active, created_at, tags, interval_months
 `
 
 type CreateRecurringDefinitionParams struct {
-	Label       string      `json:"label"`
-	CategoryID  int64       `json:"category_id"`
-	AccountID   int64       `json:"account_id"`
-	AmountCents int64       `json:"amount_cents"`
-	Frequency   string      `json:"frequency"`
-	AnchorDate  pgtype.Date `json:"anchor_date"`
-	Active      bool        `json:"active"`
+	Label          string      `json:"label"`
+	CategoryID     int64       `json:"category_id"`
+	AccountID      int64       `json:"account_id"`
+	AmountCents    int64       `json:"amount_cents"`
+	IntervalMonths int32       `json:"interval_months"`
+	AnchorDate     pgtype.Date `json:"anchor_date"`
+	Active         bool        `json:"active"`
+	Tags           []string    `json:"tags"`
 }
 
 func (q *Queries) CreateRecurringDefinition(ctx context.Context, arg CreateRecurringDefinitionParams) (RecurringDefinition, error) {
@@ -148,9 +217,10 @@ func (q *Queries) CreateRecurringDefinition(ctx context.Context, arg CreateRecur
 		arg.CategoryID,
 		arg.AccountID,
 		arg.AmountCents,
-		arg.Frequency,
+		arg.IntervalMonths,
 		arg.AnchorDate,
 		arg.Active,
+		arg.Tags,
 	)
 	var i RecurringDefinition
 	err := row.Scan(
@@ -159,12 +229,22 @@ func (q *Queries) CreateRecurringDefinition(ctx context.Context, arg CreateRecur
 		&i.CategoryID,
 		&i.AccountID,
 		&i.AmountCents,
-		&i.Frequency,
 		&i.AnchorDate,
 		&i.Active,
 		&i.CreatedAt,
+		&i.Tags,
+		&i.IntervalMonths,
 	)
 	return i, err
+}
+
+const deleteCategory = `-- name: DeleteCategory :exec
+delete from categories where id = $1
+`
+
+func (q *Queries) DeleteCategory(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteCategory, id)
+	return err
 }
 
 const findAdjustmentsByNote = `-- name: FindAdjustmentsByNote :many
@@ -217,13 +297,18 @@ func (q *Queries) GetAccount(ctx context.Context, id int64) (Account, error) {
 }
 
 const getCategory = `-- name: GetCategory :one
-select id, name, kind from categories where id = $1
+select id, name, kind, is_default from categories where id = $1
 `
 
 func (q *Queries) GetCategory(ctx context.Context, id int64) (Category, error) {
 	row := q.db.QueryRow(ctx, getCategory, id)
 	var i Category
-	err := row.Scan(&i.ID, &i.Name, &i.Kind)
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.IsDefault,
+	)
 	return i, err
 }
 
@@ -240,6 +325,22 @@ func (q *Queries) GetDefaultAccount(ctx context.Context) (Account, error) {
 		&i.StartingBalanceCents,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.IsDefault,
+	)
+	return i, err
+}
+
+const getDefaultCategory = `-- name: GetDefaultCategory :one
+select id, name, kind, is_default from categories where is_default = true limit 1
+`
+
+func (q *Queries) GetDefaultCategory(ctx context.Context) (Category, error) {
+	row := q.db.QueryRow(ctx, getDefaultCategory)
+	var i Category
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
 		&i.IsDefault,
 	)
 	return i, err
@@ -267,7 +368,7 @@ func (q *Queries) GetPayment(ctx context.Context, id int64) (Payment, error) {
 }
 
 const getRecurringDefinition = `-- name: GetRecurringDefinition :one
-select id, label, category_id, account_id, amount_cents, frequency, anchor_date, active, created_at from recurring_definitions where id = $1
+select id, label, category_id, account_id, amount_cents, anchor_date, active, created_at, tags, interval_months from recurring_definitions where id = $1
 `
 
 func (q *Queries) GetRecurringDefinition(ctx context.Context, id int64) (RecurringDefinition, error) {
@@ -279,12 +380,87 @@ func (q *Queries) GetRecurringDefinition(ctx context.Context, id int64) (Recurri
 		&i.CategoryID,
 		&i.AccountID,
 		&i.AmountCents,
-		&i.Frequency,
 		&i.AnchorDate,
 		&i.Active,
 		&i.CreatedAt,
+		&i.Tags,
+		&i.IntervalMonths,
 	)
 	return i, err
+}
+
+const insertAccountWithID = `-- name: InsertAccountWithID :exec
+insert into accounts (id, name, starting_balance_cents, currency, is_default, created_at)
+values ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertAccountWithIDParams struct {
+	ID                   int64              `json:"id"`
+	Name                 string             `json:"name"`
+	StartingBalanceCents int64              `json:"starting_balance_cents"`
+	Currency             string             `json:"currency"`
+	IsDefault            bool               `json:"is_default"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) InsertAccountWithID(ctx context.Context, arg InsertAccountWithIDParams) error {
+	_, err := q.db.Exec(ctx, insertAccountWithID,
+		arg.ID,
+		arg.Name,
+		arg.StartingBalanceCents,
+		arg.Currency,
+		arg.IsDefault,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertBalanceAdjustmentWithID = `-- name: InsertBalanceAdjustmentWithID :exec
+insert into balance_adjustments (id, account_id, amount_cents, note, occurred_on, created_at)
+values ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertBalanceAdjustmentWithIDParams struct {
+	ID          int64              `json:"id"`
+	AccountID   int64              `json:"account_id"`
+	AmountCents int64              `json:"amount_cents"`
+	Note        pgtype.Text        `json:"note"`
+	OccurredOn  pgtype.Date        `json:"occurred_on"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) InsertBalanceAdjustmentWithID(ctx context.Context, arg InsertBalanceAdjustmentWithIDParams) error {
+	_, err := q.db.Exec(ctx, insertBalanceAdjustmentWithID,
+		arg.ID,
+		arg.AccountID,
+		arg.AmountCents,
+		arg.Note,
+		arg.OccurredOn,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertCategoryWithID = `-- name: InsertCategoryWithID :exec
+insert into categories (id, name, kind, is_default)
+values ($1, $2, $3, $4)
+`
+
+type InsertCategoryWithIDParams struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	IsDefault bool   `json:"is_default"`
+}
+
+func (q *Queries) InsertCategoryWithID(ctx context.Context, arg InsertCategoryWithIDParams) error {
+	_, err := q.db.Exec(ctx, insertCategoryWithID,
+		arg.ID,
+		arg.Name,
+		arg.Kind,
+		arg.IsDefault,
+	)
+	return err
 }
 
 const insertOccurrence = `-- name: InsertOccurrence :many
@@ -340,6 +516,72 @@ func (q *Queries) InsertOccurrence(ctx context.Context, arg InsertOccurrencePara
 	return items, nil
 }
 
+const insertPaymentWithID = `-- name: InsertPaymentWithID :exec
+insert into payments (id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+`
+
+type InsertPaymentWithIDParams struct {
+	ID                    int64              `json:"id"`
+	RecurringDefinitionID pgtype.Int8        `json:"recurring_definition_id"`
+	Label                 string             `json:"label"`
+	CategoryID            int64              `json:"category_id"`
+	AccountID             int64              `json:"account_id"`
+	AmountCents           int64              `json:"amount_cents"`
+	DueDate               pgtype.Date        `json:"due_date"`
+	PaidDate              pgtype.Date        `json:"paid_date"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) InsertPaymentWithID(ctx context.Context, arg InsertPaymentWithIDParams) error {
+	_, err := q.db.Exec(ctx, insertPaymentWithID,
+		arg.ID,
+		arg.RecurringDefinitionID,
+		arg.Label,
+		arg.CategoryID,
+		arg.AccountID,
+		arg.AmountCents,
+		arg.DueDate,
+		arg.PaidDate,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertRecurringDefinitionWithID = `-- name: InsertRecurringDefinitionWithID :exec
+insert into recurring_definitions (id, label, category_id, account_id, amount_cents, interval_months, anchor_date, active, created_at, tags)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+`
+
+type InsertRecurringDefinitionWithIDParams struct {
+	ID             int64              `json:"id"`
+	Label          string             `json:"label"`
+	CategoryID     int64              `json:"category_id"`
+	AccountID      int64              `json:"account_id"`
+	AmountCents    int64              `json:"amount_cents"`
+	IntervalMonths int32              `json:"interval_months"`
+	AnchorDate     pgtype.Date        `json:"anchor_date"`
+	Active         bool               `json:"active"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	Tags           []string           `json:"tags"`
+}
+
+func (q *Queries) InsertRecurringDefinitionWithID(ctx context.Context, arg InsertRecurringDefinitionWithIDParams) error {
+	_, err := q.db.Exec(ctx, insertRecurringDefinitionWithID,
+		arg.ID,
+		arg.Label,
+		arg.CategoryID,
+		arg.AccountID,
+		arg.AmountCents,
+		arg.IntervalMonths,
+		arg.AnchorDate,
+		arg.Active,
+		arg.CreatedAt,
+		arg.Tags,
+	)
+	return err
+}
+
 const listAccounts = `-- name: ListAccounts :many
 select id, name, starting_balance_cents, currency, created_at, is_default from accounts order by id
 `
@@ -372,7 +614,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 }
 
 const listActiveRecurringDefinitions = `-- name: ListActiveRecurringDefinitions :many
-select id, label, category_id, account_id, amount_cents, frequency, anchor_date, active, created_at from recurring_definitions where active = true order by id
+select id, label, category_id, account_id, amount_cents, anchor_date, active, created_at, tags, interval_months from recurring_definitions where active = true order by id
 `
 
 func (q *Queries) ListActiveRecurringDefinitions(ctx context.Context) ([]RecurringDefinition, error) {
@@ -390,10 +632,11 @@ func (q *Queries) ListActiveRecurringDefinitions(ctx context.Context) ([]Recurri
 			&i.CategoryID,
 			&i.AccountID,
 			&i.AmountCents,
-			&i.Frequency,
 			&i.AnchorDate,
 			&i.Active,
 			&i.CreatedAt,
+			&i.Tags,
+			&i.IntervalMonths,
 		); err != nil {
 			return nil, err
 		}
@@ -436,8 +679,73 @@ func (q *Queries) ListAdjustmentsByAccount(ctx context.Context, accountID int64)
 	return items, nil
 }
 
+const listAllBalanceAdjustments = `-- name: ListAllBalanceAdjustments :many
+select id, account_id, amount_cents, note, occurred_on, created_at from balance_adjustments order by id
+`
+
+func (q *Queries) ListAllBalanceAdjustments(ctx context.Context) ([]BalanceAdjustment, error) {
+	rows, err := q.db.Query(ctx, listAllBalanceAdjustments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BalanceAdjustment
+	for rows.Next() {
+		var i BalanceAdjustment
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.AmountCents,
+			&i.Note,
+			&i.OccurredOn,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllPayments = `-- name: ListAllPayments :many
+select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at from payments order by id
+`
+
+func (q *Queries) ListAllPayments(ctx context.Context) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, listAllPayments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Payment
+	for rows.Next() {
+		var i Payment
+		if err := rows.Scan(
+			&i.ID,
+			&i.RecurringDefinitionID,
+			&i.Label,
+			&i.CategoryID,
+			&i.AccountID,
+			&i.AmountCents,
+			&i.DueDate,
+			&i.PaidDate,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCategories = `-- name: ListCategories :many
-select id, name, kind from categories order by id
+select id, name, kind, is_default from categories order by id
 `
 
 func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
@@ -449,7 +757,12 @@ func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
 	var items []Category
 	for rows.Next() {
 		var i Category
-		if err := rows.Scan(&i.ID, &i.Name, &i.Kind); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.IsDefault,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -574,7 +887,7 @@ func (q *Queries) ListPaymentsByYearMonth(ctx context.Context, arg ListPaymentsB
 }
 
 const listRecurringDefinitions = `-- name: ListRecurringDefinitions :many
-select id, label, category_id, account_id, amount_cents, frequency, anchor_date, active, created_at from recurring_definitions order by id
+select id, label, category_id, account_id, amount_cents, anchor_date, active, created_at, tags, interval_months from recurring_definitions order by id
 `
 
 func (q *Queries) ListRecurringDefinitions(ctx context.Context) ([]RecurringDefinition, error) {
@@ -592,10 +905,46 @@ func (q *Queries) ListRecurringDefinitions(ctx context.Context) ([]RecurringDefi
 			&i.CategoryID,
 			&i.AccountID,
 			&i.AmountCents,
-			&i.Frequency,
 			&i.AnchorDate,
 			&i.Active,
 			&i.CreatedAt,
+			&i.Tags,
+			&i.IntervalMonths,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecurringDefinitionsByTag = `-- name: ListRecurringDefinitionsByTag :many
+select id, label, category_id, account_id, amount_cents, anchor_date, active, created_at, tags, interval_months from recurring_definitions where $1::text = any(tags) order by id
+`
+
+func (q *Queries) ListRecurringDefinitionsByTag(ctx context.Context, tag string) ([]RecurringDefinition, error) {
+	rows, err := q.db.Query(ctx, listRecurringDefinitionsByTag, tag)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RecurringDefinition
+	for rows.Next() {
+		var i RecurringDefinition
+		if err := rows.Scan(
+			&i.ID,
+			&i.Label,
+			&i.CategoryID,
+			&i.AccountID,
+			&i.AmountCents,
+			&i.AnchorDate,
+			&i.Active,
+			&i.CreatedAt,
+			&i.Tags,
+			&i.IntervalMonths,
 		); err != nil {
 			return nil, err
 		}
@@ -610,7 +959,7 @@ func (q *Queries) ListRecurringDefinitions(ctx context.Context) ([]RecurringDefi
 const listYearlyFrequencyPayments = `-- name: ListYearlyFrequencyPayments :many
 select p.id, p.recurring_definition_id, p.label, p.category_id, p.account_id, p.amount_cents, p.due_date, p.paid_date, p.created_at from payments p
 join recurring_definitions rd on rd.id = p.recurring_definition_id
-where rd.frequency = 'yearly' and extract(year from p.due_date) = $1::int
+where rd.interval_months = 12 and extract(year from p.due_date) = $1::int
 order by p.due_date, p.id
 `
 
@@ -663,30 +1012,97 @@ func (q *Queries) MarkAccountDefault(ctx context.Context, id int64) (Account, er
 	return i, err
 }
 
-const sumActiveDefinitionsByFrequencyKind = `-- name: SumActiveDefinitionsByFrequencyKind :many
-select rd.frequency, c.kind, coalesce(sum(rd.amount_cents), 0)::bigint as total
+const renameCategory = `-- name: RenameCategory :one
+update categories set name = $2 where id = $1
+returning id, name, kind, is_default
+`
+
+type RenameCategoryParams struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+func (q *Queries) RenameCategory(ctx context.Context, arg RenameCategoryParams) (Category, error) {
+	row := q.db.QueryRow(ctx, renameCategory, arg.ID, arg.Name)
+	var i Category
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.IsDefault,
+	)
+	return i, err
+}
+
+const resetAccountsSeq = `-- name: ResetAccountsSeq :exec
+select setval(pg_get_serial_sequence('accounts', 'id'), coalesce((select max(id) from accounts), 1), (select max(id) from accounts) is not null)
+`
+
+func (q *Queries) ResetAccountsSeq(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, resetAccountsSeq)
+	return err
+}
+
+const resetBalanceAdjustmentsSeq = `-- name: ResetBalanceAdjustmentsSeq :exec
+select setval(pg_get_serial_sequence('balance_adjustments', 'id'), coalesce((select max(id) from balance_adjustments), 1), (select max(id) from balance_adjustments) is not null)
+`
+
+func (q *Queries) ResetBalanceAdjustmentsSeq(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, resetBalanceAdjustmentsSeq)
+	return err
+}
+
+const resetCategoriesSeq = `-- name: ResetCategoriesSeq :exec
+select setval(pg_get_serial_sequence('categories', 'id'), coalesce((select max(id) from categories), 1), (select max(id) from categories) is not null)
+`
+
+func (q *Queries) ResetCategoriesSeq(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, resetCategoriesSeq)
+	return err
+}
+
+const resetPaymentsSeq = `-- name: ResetPaymentsSeq :exec
+select setval(pg_get_serial_sequence('payments', 'id'), coalesce((select max(id) from payments), 1), (select max(id) from payments) is not null)
+`
+
+func (q *Queries) ResetPaymentsSeq(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, resetPaymentsSeq)
+	return err
+}
+
+const resetRecurringDefinitionsSeq = `-- name: ResetRecurringDefinitionsSeq :exec
+select setval(pg_get_serial_sequence('recurring_definitions', 'id'), coalesce((select max(id) from recurring_definitions), 1), (select max(id) from recurring_definitions) is not null)
+`
+
+func (q *Queries) ResetRecurringDefinitionsSeq(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, resetRecurringDefinitionsSeq)
+	return err
+}
+
+const sumActiveDefinitionsByIntervalKind = `-- name: SumActiveDefinitionsByIntervalKind :many
+select rd.interval_months, c.kind, coalesce(sum(rd.amount_cents), 0)::bigint as total
 from recurring_definitions rd
 join categories c on c.id = rd.category_id
 where rd.active = true
-group by rd.frequency, c.kind
+group by rd.interval_months, c.kind
 `
 
-type SumActiveDefinitionsByFrequencyKindRow struct {
-	Frequency string `json:"frequency"`
-	Kind      string `json:"kind"`
-	Total     int64  `json:"total"`
+type SumActiveDefinitionsByIntervalKindRow struct {
+	IntervalMonths int32  `json:"interval_months"`
+	Kind           string `json:"kind"`
+	Total          int64  `json:"total"`
 }
 
-func (q *Queries) SumActiveDefinitionsByFrequencyKind(ctx context.Context) ([]SumActiveDefinitionsByFrequencyKindRow, error) {
-	rows, err := q.db.Query(ctx, sumActiveDefinitionsByFrequencyKind)
+func (q *Queries) SumActiveDefinitionsByIntervalKind(ctx context.Context) ([]SumActiveDefinitionsByIntervalKindRow, error) {
+	rows, err := q.db.Query(ctx, sumActiveDefinitionsByIntervalKind)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SumActiveDefinitionsByFrequencyKindRow
+	var items []SumActiveDefinitionsByIntervalKindRow
 	for rows.Next() {
-		var i SumActiveDefinitionsByFrequencyKindRow
-		if err := rows.Scan(&i.Frequency, &i.Kind, &i.Total); err != nil {
+		var i SumActiveDefinitionsByIntervalKindRow
+		if err := rows.Scan(&i.IntervalMonths, &i.Kind, &i.Total); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -781,15 +1197,17 @@ const updateRecurringDefinition = `-- name: UpdateRecurringDefinition :one
 update recurring_definitions set
   amount_cents = coalesce($1, amount_cents),
   account_id = coalesce($2, account_id),
-  active = coalesce($3, active)
-where id = $4
-returning id, label, category_id, account_id, amount_cents, frequency, anchor_date, active, created_at
+  active = coalesce($3, active),
+  tags = coalesce($4, tags)
+where id = $5
+returning id, label, category_id, account_id, amount_cents, anchor_date, active, created_at, tags, interval_months
 `
 
 type UpdateRecurringDefinitionParams struct {
 	AmountCents pgtype.Int8 `json:"amount_cents"`
 	AccountID   pgtype.Int8 `json:"account_id"`
 	Active      pgtype.Bool `json:"active"`
+	Tags        []string    `json:"tags"`
 	ID          int64       `json:"id"`
 }
 
@@ -798,6 +1216,7 @@ func (q *Queries) UpdateRecurringDefinition(ctx context.Context, arg UpdateRecur
 		arg.AmountCents,
 		arg.AccountID,
 		arg.Active,
+		arg.Tags,
 		arg.ID,
 	)
 	var i RecurringDefinition
@@ -807,10 +1226,11 @@ func (q *Queries) UpdateRecurringDefinition(ctx context.Context, arg UpdateRecur
 		&i.CategoryID,
 		&i.AccountID,
 		&i.AmountCents,
-		&i.Frequency,
 		&i.AnchorDate,
 		&i.Active,
 		&i.CreatedAt,
+		&i.Tags,
+		&i.IntervalMonths,
 	)
 	return i, err
 }

@@ -27,9 +27,10 @@ type BalanceAdjustment struct {
 }
 
 type Category struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	IsDefault bool   `json:"is_default"`
 }
 
 type Payment struct {
@@ -45,13 +46,14 @@ type Payment struct {
 }
 
 type RecurringDefinition struct {
-	ID          int64              `json:"id"`
-	Label       string             `json:"label"`
-	CategoryID  int64              `json:"category_id"`
-	AccountID   int64              `json:"account_id"`
-	AmountCents int64              `json:"amount_cents"`
-	Frequency   string             `json:"frequency"`
-	AnchorDate  pgtype.Date        `json:"anchor_date"`
-	Active      bool               `json:"active"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID             int64              `json:"id"`
+	Label          string             `json:"label"`
+	CategoryID     int64              `json:"category_id"`
+	AccountID      int64              `json:"account_id"`
+	AmountCents    int64              `json:"amount_cents"`
+	AnchorDate     pgtype.Date        `json:"anchor_date"`
+	Active         bool               `json:"active"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	Tags           []string           `json:"tags"`
+	IntervalMonths int32              `json:"interval_months"`
 }

@@ -9,31 +9,41 @@ import (
 )
 
 type recurringResponse struct {
-	ID          int64  `json:"id"`
-	Label       string `json:"label"`
-	CategoryID  int64  `json:"category_id"`
-	AccountID   int64  `json:"account_id"`
-	AmountCents int64  `json:"amount_cents"`
-	Frequency   string `json:"frequency"`
-	AnchorDate  string `json:"anchor_date"`
-	Active      bool   `json:"active"`
+	ID             int64    `json:"id"`
+	Label          string   `json:"label"`
+	CategoryID     int64    `json:"category_id"`
+	AccountID      int64    `json:"account_id"`
+	AmountCents    int64    `json:"amount_cents"`
+	IntervalMonths int32    `json:"interval_months"`
+	AnchorDate     string   `json:"anchor_date"`
+	Active         bool     `json:"active"`
+	Tags           []string `json:"tags"`
 }
 
 func toRecurringResponse(d store.RecurringDefinition) recurringResponse {
 	return recurringResponse{
-		ID:          d.ID,
-		Label:       d.Label,
-		CategoryID:  d.CategoryID,
-		AccountID:   d.AccountID,
-		AmountCents: d.AmountCents,
-		Frequency:   d.Frequency,
-		AnchorDate:  formatDate(d.AnchorDate),
-		Active:      d.Active,
+		ID:             d.ID,
+		Label:          d.Label,
+		CategoryID:     d.CategoryID,
+		AccountID:      d.AccountID,
+		AmountCents:    d.AmountCents,
+		IntervalMonths: d.IntervalMonths,
+		AnchorDate:     formatDate(d.AnchorDate),
+		Active:         d.Active,
+		Tags:           d.Tags,
 	}
 }
 
 func (s *Server) listRecurring(w http.ResponseWriter, r *http.Request) {
-	defs, err := s.q.ListRecurringDefinitions(r.Context())
+	var (
+		defs []store.RecurringDefinition
+		err  error
+	)
+	if tag := r.URL.Query().Get("tag"); tag != "" {
+		defs, err = s.q.ListRecurringDefinitionsByTag(r.Context(), tag)
+	} else {
+		defs, err = s.q.ListRecurringDefinitions(r.Context())
+	}
 	if err != nil {
 		handleDBError(w, err)
 		return
@@ -45,16 +55,15 @@ func (s *Server) listRecurring(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-var validFrequencies = map[string]bool{"monthly": true, "quarterly": true, "yearly": true}
-
 type createRecurringRequest struct {
-	Label       string `json:"label"`
-	CategoryID  int64  `json:"category_id"`
-	AccountID   int64  `json:"account_id"`
-	AmountCents int64  `json:"amount_cents"`
-	Frequency   string `json:"frequency"`
-	AnchorDate  string `json:"anchor_date"`
-	Active      *bool  `json:"active"`
+	Label          string   `json:"label"`
+	CategoryID     int64    `json:"category_id"`
+	AccountID      int64    `json:"account_id"`
+	AmountCents    int64    `json:"amount_cents"`
+	IntervalMonths int32    `json:"interval_months"`
+	AnchorDate     string   `json:"anchor_date"`
+	Active         *bool    `json:"active"`
+	Tags           []string `json:"tags"`
 }
 
 func (s *Server) createRecurring(w http.ResponseWriter, r *http.Request) {
@@ -67,8 +76,8 @@ func (s *Server) createRecurring(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "label is required")
 		return
 	}
-	if !validFrequencies[req.Frequency] {
-		writeError(w, http.StatusBadRequest, "frequency must be monthly, quarterly, or yearly")
+	if req.IntervalMonths < 1 {
+		writeError(w, http.StatusBadRequest, "interval_months must be at least 1 (1 = monthly, 12 = yearly, or any custom interval)")
 		return
 	}
 
@@ -82,15 +91,20 @@ func (s *Server) createRecurring(w http.ResponseWriter, r *http.Request) {
 	if req.Active != nil {
 		active = *req.Active
 	}
+	tags := req.Tags
+	if tags == nil {
+		tags = []string{}
+	}
 
 	def, err := s.q.CreateRecurringDefinition(r.Context(), store.CreateRecurringDefinitionParams{
-		Label:       req.Label,
-		CategoryID:  req.CategoryID,
-		AccountID:   req.AccountID,
-		AmountCents: req.AmountCents,
-		Frequency:   req.Frequency,
-		AnchorDate:  anchor,
-		Active:      active,
+		Label:          req.Label,
+		CategoryID:     req.CategoryID,
+		AccountID:      req.AccountID,
+		AmountCents:    req.AmountCents,
+		IntervalMonths: req.IntervalMonths,
+		AnchorDate:     anchor,
+		Active:         active,
+		Tags:           tags,
 	})
 	if err != nil {
 		handleDBError(w, err)
@@ -100,9 +114,10 @@ func (s *Server) createRecurring(w http.ResponseWriter, r *http.Request) {
 }
 
 type patchRecurringRequest struct {
-	AmountCents *int64 `json:"amount_cents"`
-	AccountID   *int64 `json:"account_id"`
-	Active      *bool  `json:"active"`
+	AmountCents *int64    `json:"amount_cents"`
+	AccountID   *int64    `json:"account_id"`
+	Active      *bool     `json:"active"`
+	Tags        *[]string `json:"tags"`
 }
 
 func (s *Server) updateRecurring(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +142,9 @@ func (s *Server) updateRecurring(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Active != nil {
 		params.Active = pgtype.Bool{Bool: *req.Active, Valid: true}
+	}
+	if req.Tags != nil {
+		params.Tags = *req.Tags
 	}
 
 	def, err := s.q.UpdateRecurringDefinition(r.Context(), params)

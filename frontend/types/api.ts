@@ -29,9 +29,8 @@ export interface Category {
   id: string
   name: string
   kind: CategoryKind
+  is_default: boolean
 }
-
-export type RecurringFrequency = 'monthly' | 'quarterly' | 'yearly'
 
 export interface RecurringDefinition {
   id: string
@@ -39,9 +38,10 @@ export interface RecurringDefinition {
   category_id: string
   account_id: string
   amount_cents: number
-  frequency: RecurringFrequency
+  interval_months: number
   anchor_date: string
   active: boolean
+  tags: string[]
 }
 
 export interface Payment {
@@ -72,11 +72,37 @@ export interface YearlyOverview {
   }[]
 }
 
+export interface ExportData {
+  version: number
+  exported_at: string
+  accounts: {
+    id: string
+    name: string
+    starting_balance_cents: number
+    currency: string
+    is_default: boolean
+    created_at: string
+  }[]
+  categories: Category[]
+  recurring_definitions: (RecurringDefinition & { created_at: string })[]
+  payments: (Payment & { created_at: string })[]
+  balance_adjustments: {
+    id: string
+    account_id: string
+    amount_cents: number
+    note: string | null
+    occurred_on: string
+    created_at: string
+  }[]
+}
+
 export interface MonthlyOverview {
   year: number
   month: number
   payments: Payment[]
   budget: {
+    predicted_costs_cents: number
+    buffer_cents: number
     set_aside_cents: number
     paid_against_fixed_costs_cents: number
     remaining_cents: number

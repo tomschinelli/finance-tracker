@@ -5,10 +5,12 @@ package finance
 import "time"
 
 // ComputeOccurrenceDates returns every due date in [from, to] (inclusive) for
-// a recurring definition with the given anchor date and frequency.
-func ComputeOccurrenceDates(anchor time.Time, frequency string, from, to time.Time) []time.Time {
-	step := monthsPerOccurrence(frequency)
-	if step == 0 {
+// a recurring definition with the given anchor date, recurring every
+// intervalMonths months (1 = monthly, 12 = yearly, any other positive value
+// is a custom interval).
+func ComputeOccurrenceDates(anchor time.Time, intervalMonths int, from, to time.Time) []time.Time {
+	step := intervalMonths
+	if step < 1 {
 		return nil
 	}
 	anchor = truncateToDate(anchor)
@@ -26,19 +28,6 @@ func ComputeOccurrenceDates(anchor time.Time, frequency string, from, to time.Ti
 		}
 	}
 	return dates
-}
-
-func monthsPerOccurrence(frequency string) int {
-	switch frequency {
-	case "monthly":
-		return 1
-	case "quarterly":
-		return 3
-	case "yearly":
-		return 12
-	default:
-		return 0
-	}
 }
 
 func truncateToDate(t time.Time) time.Time {

@@ -101,8 +101,12 @@ async function onBudgetCreated(_transfer: Transfer) {
     <template v-else-if="overview">
       <section class="summary">
         <div class="card">
-          <h3>Set-aside budget</h3>
-          <p>€{{ euros(overview.budget.set_aside_cents) }}</p>
+          <h3>Predicted costs</h3>
+          <p>€{{ euros(overview.budget.predicted_costs_cents) }}</p>
+        </div>
+        <div class="card">
+          <h3>Buffer for non-monthly costs</h3>
+          <p>€{{ euros(overview.budget.buffer_cents) }}</p>
         </div>
         <div class="card">
           <h3>Paid against fixed costs</h3>
@@ -124,7 +128,9 @@ async function onBudgetCreated(_transfer: Transfer) {
         </p>
         <template v-else>
           <p>
-            Budget not set for this month. Estimated costs for this month: €{{ euros(overview.budget.set_aside_cents) }}.
+            Budget not set for this month. Predicted costs: €{{ euros(overview.budget.predicted_costs_cents) }},
+            plus €{{ euros(overview.budget.buffer_cents) }} buffer for non-monthly costs
+            (€{{ euros(overview.budget.set_aside_cents) }} total to set aside).
           </p>
           <button type="button" @click="showAddBudget = true">Add budget to account</button>
         </template>
@@ -230,7 +236,7 @@ async function onBudgetCreated(_transfer: Transfer) {
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }

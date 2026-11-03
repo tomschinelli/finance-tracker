@@ -75,10 +75,12 @@ the normal workflow.
   payment's category `kind` (income `+`, expense `-`).
 - **Category** — `id, name, kind (income|expense)`.
 - **RecurringDefinition** — `id, label, category_id, account_id,
-  amount_cents, frequency (monthly|quarterly|yearly), anchor_date, active,
-  created_at`. One shape covers rent/bills/salary (monthly) and irregular
-  costs (quarterly/yearly) — frequency is just a field, not a separate
-  model, since they don't differ structurally.
+  amount_cents, interval_months, anchor_date, active, created_at`. One
+  shape covers rent/bills/salary (`interval_months = 1`, monthly) and
+  irregular costs — a yearly bill is `interval_months = 12`, and any other
+  cadence (e.g. "every 2 months") is just a different positive integer —
+  interval is just a field, not a separate model, since they don't differ
+  structurally.
 - **Payment** — `id, recurring_definition_id (nullable), label,
   category_id, account_id, amount_cents, due_date, paid_date (nullable),
   created_at`. The actual ledger: one row per occurrence. `paid_date IS
@@ -108,14 +110,15 @@ errors — standard practice for financial data.
 
 Computed, not stored:
 
-- **Monthly set-aside budget** = Σ(active monthly-expense definitions) +
-  Σ(active quarterly-expense definitions)/3 + Σ(active yearly-expense
-  definitions)/12 — the amount to transfer out so fixed + amortized
-  irregular costs are covered without touching it.
-- **Yearly overview** — a given year's yearly-frequency payments, paid vs
-  remaining totals, whether each account's current balance covers its
-  remaining yearly cost, and a monthly buffer (total yearly cost / 12) that
-  would cover those costs if set aside monthly.
+- **Monthly set-aside budget** = Σ(active definitions with
+  `interval_months = 1`) + Σ over every other active interval group of
+  (that group's total / its `interval_months`) — the amount to transfer
+  out so fixed + amortized irregular costs are covered without touching
+  it.
+- **Yearly overview** — a given year's `interval_months = 12` payments,
+  paid vs remaining totals, whether each account's current balance covers
+  its remaining yearly cost, and a monthly buffer (total yearly cost / 12)
+  that would cover those costs if set aside monthly.
 
 ### Explicitly out of scope for v1
 

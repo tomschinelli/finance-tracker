@@ -22,7 +22,7 @@ func (s *Server) generateOccurrences(ctx context.Context, from, to time.Time) er
 		return err
 	}
 	for _, d := range defs {
-		for _, dt := range finance.ComputeOccurrenceDates(d.AnchorDate.Time, d.Frequency, from, to) {
+		for _, dt := range finance.ComputeOccurrenceDates(d.AnchorDate.Time, int(d.IntervalMonths), from, to) {
 			_, err := s.q.InsertOccurrence(ctx, store.InsertOccurrenceParams{
 				RecurringDefinitionID: pgtype.Int8{Int64: d.ID, Valid: true},
 				Label:                 d.Label,
@@ -122,6 +122,8 @@ type monthlyAccountOverview struct {
 }
 
 type monthlyBudgetOverview struct {
+	PredictedCostsCents        int64  `json:"predicted_costs_cents"`
+	BufferCents                int64  `json:"buffer_cents"`
 	SetAsideCents              int64  `json:"set_aside_cents"`
 	PaidAgainstFixedCostsCents int64  `json:"paid_against_fixed_costs_cents"`
 	RemainingCents             int64  `json:"remaining_cents"`
@@ -195,26 +197,30 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	sums, err := s.q.SumActiveDefinitionsByFrequencyKind(r.Context())
+	sums, err := s.q.SumActiveDefinitionsByIntervalKind(r.Context())
 	if err != nil {
 		handleDBError(w, err)
 		return
 	}
-	var monthlyExpense, quarterlyExpense, yearlyExpense int64
+	var monthlyExpense int64
+	bufferEntries := map[int]int64{}
 	for _, row := range sums {
 		if row.Kind != "expense" {
 			continue
 		}
-		switch row.Frequency {
-		case "monthly":
-			monthlyExpense = row.Total
-		case "quarterly":
-			quarterlyExpense = row.Total
-		case "yearly":
-			yearlyExpense = row.Total
+		if row.IntervalMonths == 1 {
+			monthlyExpense += row.Total
+			continue
 		}
+		bufferEntries[int(row.IntervalMonths)] += row.Total
 	}
-	setAside := finance.MonthlySetAsideCents(monthlyExpense, quarterlyExpense, yearlyExpense)
+	// Predicted costs is what's actually due this month (fixed monthly
+	// expenses only); non-monthly costs are smoothed into the buffer
+	// instead, since the account is topped up for them every month
+	// regardless of which month they actually fall due in.
+	predictedCosts := monthlyExpense
+	buffer := finance.MonthlyBufferCents(bufferEntries)
+	setAside := predictedCosts + buffer
 
 	budgetNote := budgetMarkerNote(year, month)
 	budgetAdjustments, err := s.q.FindAdjustmentsByNote(r.Context(), pgtype.Text{String: budgetNote, Valid: true})
@@ -243,6 +249,8 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 		"month":    month,
 		"payments": paymentResponses,
 		"budget": monthlyBudgetOverview{
+			PredictedCostsCents:        predictedCosts,
+			BufferCents:                buffer,
 			SetAsideCents:              setAside,
 			PaidAgainstFixedCostsCents: paidAgainstFixed,
 			RemainingCents:             setAside - paidAgainstFixed,

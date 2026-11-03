@@ -5,6 +5,7 @@
       <NuxtLink to="/yearly" active-class="active">Yearly</NuxtLink>
       <NuxtLink to="/accounts" active-class="active">Accounts</NuxtLink>
       <NuxtLink to="/recurring" active-class="active">Recurring</NuxtLink>
+      <NuxtLink to="/categories" active-class="active">Categories</NuxtLink>
     </nav>
     <main class="content">
       <NuxtPage />
