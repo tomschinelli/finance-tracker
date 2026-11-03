@@ -42,7 +42,7 @@ func main() {
 	}
 	defer pool.Close()
 
-	srv := api.NewServer(store.New(pool))
+	srv := api.NewServer(pool, store.New(pool))
 
 	addr := ":" + port
 	log.Printf("listening on %s", addr)

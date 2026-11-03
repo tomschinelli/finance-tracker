@@ -21,14 +21,20 @@ const openAdjustmentFor = ref<string | null>(null)
 const amount = ref('')
 const note = ref('')
 const occurredOn = ref(todayIso())
+const otherAccountId = ref('')
 const saving = ref(false)
 const error = ref('')
+
+const otherAccountOptions = computed(() =>
+  accounts.value?.filter(a => a.id !== openAdjustmentFor.value) ?? []
+)
 
 function openAdjustment(account: Account) {
   openAdjustmentFor.value = account.id
   amount.value = euros(account.current_balance_cents)
   note.value = ''
   occurredOn.value = todayIso()
+  otherAccountId.value = ''
   error.value = ''
 }
 
@@ -36,21 +42,65 @@ async function submitAdjustment() {
   if (!openAdjustmentFor.value) return
   const account = accounts.value?.find(a => a.id === openAdjustmentFor.value)
   if (!account) return
+
+  const deltaCents = Math.round(parseFloat(amount.value) * 100) - account.current_balance_cents
+  if (!account.is_default) {
+    if (!otherAccountId.value) {
+      error.value = 'Select the account this amount moves with'
+      return
+    }
+    if (deltaCents === 0) {
+      error.value = 'No change to apply'
+      return
+    }
+  }
+
   saving.value = true
   error.value = ''
   try {
-    const newBalanceCents = Math.round(parseFloat(amount.value) * 100)
-    await api.post(`/accounts/${openAdjustmentFor.value}/adjustments`, {
-      amount_cents: newBalanceCents - account.current_balance_cents,
-      note: note.value,
-      occurred_on: occurredOn.value
-    })
+    if (account.is_default) {
+      await api.post(`/accounts/${openAdjustmentFor.value}/adjustments`, {
+        amount_cents: deltaCents,
+        note: note.value,
+        occurred_on: occurredOn.value
+      })
+    } else if (deltaCents > 0) {
+      await api.post('/transfers', {
+        from_account_id: otherAccountId.value,
+        to_account_id: account.id,
+        amount_cents: deltaCents,
+        note: note.value,
+        occurred_on: occurredOn.value
+      })
+    } else {
+      await api.post('/transfers', {
+        from_account_id: account.id,
+        to_account_id: otherAccountId.value,
+        amount_cents: -deltaCents,
+        note: note.value,
+        occurred_on: occurredOn.value
+      })
+    }
     openAdjustmentFor.value = null
     await refresh()
   } catch (err: any) {
     error.value = err.message
   } finally {
     saving.value = false
+  }
+}
+
+const settingDefaultFor = ref<string | null>(null)
+
+async function setDefault(account: Account) {
+  settingDefaultFor.value = account.id
+  try {
+    await api.post(`/accounts/${account.id}/default`, {})
+    await refresh()
+  } catch (err: any) {
+    error.value = err.message
+  } finally {
+    settingDefaultFor.value = null
   }
 }
 
@@ -125,7 +175,16 @@ async function submitNewAccount() {
       <li v-for="a in accounts" :key="a.id" class="account">
         <div class="account-row">
           <NuxtLink :to="`/accounts/${a.id}`" class="name">{{ a.name }}</NuxtLink>
+          <span v-if="a.is_default" class="default-badge">default</span>
           <span class="balance">{{ a.currency }} {{ euros(a.current_balance_cents) }}</span>
+          <button
+            v-if="!a.is_default"
+            type="button"
+            :disabled="settingDefaultFor === a.id"
+            @click="setDefault(a)"
+          >
+            {{ settingDefaultFor === a.id ? 'Setting...' : 'Set as default' }}
+          </button>
           <button type="button" @click="openAdjustment(a)">Add adjustment</button>
         </div>
 
@@ -133,6 +192,13 @@ async function submitNewAccount() {
           <label>
             New balance ({{ a.currency }})
             <input v-model="amount" type="number" step="0.01">
+          </label>
+          <label v-if="!a.is_default">
+            Account this moves with
+            <select v-model="otherAccountId">
+              <option value="" disabled>Select account</option>
+              <option v-for="o in otherAccountOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
+            </select>
           </label>
           <label>
             Note
@@ -145,7 +211,7 @@ async function submitNewAccount() {
           <p v-if="error" class="error">{{ error }}</p>
           <div class="actions">
             <button type="button" @click="openAdjustmentFor = null">Cancel</button>
-            <button type="button" :disabled="saving" @click="submitAdjustment">
+            <button type="button" :disabled="saving || (!a.is_default && !otherAccountId)" @click="submitAdjustment">
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
           </div>
@@ -210,6 +276,14 @@ async function submitNewAccount() {
 
 .name:hover {
   text-decoration: underline;
+}
+
+.default-badge {
+  font-size: 0.75rem;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
 }
 
 .adjustment-form {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -106,8 +107,9 @@ func (s *Server) overviewYearly(w http.ResponseWriter, r *http.Request) {
 		"year":     year,
 		"payments": paymentResponses,
 		"totals": map[string]int64{
-			"paid_cents":      paidCents,
-			"remaining_cents": remainingCents,
+			"paid_cents":           paidCents,
+			"remaining_cents":      remainingCents,
+			"monthly_buffer_cents": (paidCents + remainingCents) / 12,
 		},
 		"accounts": accountsOut,
 	})
@@ -117,6 +119,22 @@ type monthlyAccountOverview struct {
 	AccountID           int64  `json:"account_id"`
 	Name                string `json:"name"`
 	CurrentBalanceCents int64  `json:"current_balance_cents"`
+}
+
+type monthlyBudgetOverview struct {
+	SetAsideCents              int64  `json:"set_aside_cents"`
+	PaidAgainstFixedCostsCents int64  `json:"paid_against_fixed_costs_cents"`
+	RemainingCents             int64  `json:"remaining_cents"`
+	AlreadySet                 bool   `json:"already_set"`
+	MarkerNote                 string `json:"marker_note"`
+}
+
+// budgetMarkerNote is the balance_adjustments.note convention used to mark
+// that this month's set-aside budget has already been deposited into an
+// account, so the same month isn't double-counted. No separate table is
+// needed: the note text itself is the idempotency marker.
+func budgetMarkerNote(year, month int) string {
+	return fmt.Sprintf("Monthly budget set-aside %04d-%02d", year, month)
 }
 
 func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +216,13 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 	}
 	setAside := finance.MonthlySetAsideCents(monthlyExpense, quarterlyExpense, yearlyExpense)
 
+	budgetNote := budgetMarkerNote(year, month)
+	budgetAdjustments, err := s.q.FindAdjustmentsByNote(r.Context(), pgtype.Text{String: budgetNote, Valid: true})
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+
 	accounts, err := s.q.ListAccounts(r.Context())
 	if err != nil {
 		handleDBError(w, err)
@@ -217,10 +242,12 @@ func (s *Server) overviewMonthly(w http.ResponseWriter, r *http.Request) {
 		"year":     year,
 		"month":    month,
 		"payments": paymentResponses,
-		"budget": map[string]int64{
-			"set_aside_cents":                setAside,
-			"paid_against_fixed_costs_cents": paidAgainstFixed,
-			"remaining_cents":                setAside - paidAgainstFixed,
+		"budget": monthlyBudgetOverview{
+			SetAsideCents:              setAside,
+			PaidAgainstFixedCostsCents: paidAgainstFixed,
+			RemainingCents:             setAside - paidAgainstFixed,
+			AlreadySet:                 len(budgetAdjustments) > 0,
+			MarkerNote:                 budgetNote,
 		},
 		"accounts":                 accountsOut,
 		"remaining_expected_cents": remainingExpected,

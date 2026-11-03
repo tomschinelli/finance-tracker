@@ -1,24 +1,61 @@
 <script setup lang="ts">
-import type { Account, Category, MonthlyOverview, Payment } from '~/types/api'
+import type { Account, Category, MonthlyOverview, Payment, RecurringDefinition, Transfer } from '~/types/api'
 
 const api = useApi()
 
 const now = new Date()
-const year = now.getFullYear()
-const month = now.getMonth() + 1
+const year = ref(now.getFullYear())
+const month = ref(now.getMonth() + 1)
 
 const { data: overview, error: overviewError, refresh } = await useAsyncData<MonthlyOverview>(
   'monthly-overview',
-  () => api.get(`/overview/monthly?year=${year}&month=${month}`)
+  () => api.get(`/overview/monthly?year=${year.value}&month=${month.value}`)
 )
 const { data: categories } = await useAsyncData<Category[]>('categories', () => api.get('/categories'), { default: () => [] })
 const { data: accounts } = await useAsyncData<Account[]>('accounts', () => api.get('/accounts'), { default: () => [] })
 
+watch([year, month], () => refresh())
+
+const monthLabel = computed(() => {
+  const d = new Date(year.value, month.value - 1, 1)
+  return d.toLocaleString('default', { month: 'long', year: 'numeric' })
+})
+
+const isCurrentMonth = computed(() => year.value === now.getFullYear() && month.value === now.getMonth() + 1)
+
+function prevMonth() {
+  if (month.value === 1) {
+    month.value = 12
+    year.value -= 1
+  } else {
+    month.value -= 1
+  }
+}
+
+function nextMonth() {
+  if (month.value === 12) {
+    month.value = 1
+    year.value += 1
+  } else {
+    month.value += 1
+  }
+}
+
+function goToday() {
+  year.value = now.getFullYear()
+  month.value = now.getMonth() + 1
+}
+
 const categoryName = (id: string) => categories.value?.find(c => c.id === id)?.name ?? id
 const accountName = (id: string) => accounts.value?.find(a => a.id === id)?.name ?? id
 
+const unpaidPayments = computed(() => overview.value?.payments.filter(p => p.paid_date === null) ?? [])
+const paidPayments = computed(() => overview.value?.payments.filter(p => p.paid_date !== null) ?? [])
+
 const selectedPayment = ref<Payment | null>(null)
 const showAddAdhoc = ref(false)
+const showAddRecurring = ref(false)
+const showAddBudget = ref(false)
 
 function euros(cents: number) {
   return (cents / 100).toFixed(2)
@@ -29,15 +66,33 @@ async function onSaved() {
   await refresh()
 }
 
-async function onCreated() {
+async function onAdhocCreated(_payment: Payment) {
   showAddAdhoc.value = false
+  await refresh()
+}
+
+async function onRecurringCreated(_definition: RecurringDefinition) {
+  showAddRecurring.value = false
+  await refresh()
+}
+
+async function onBudgetCreated(_transfer: Transfer) {
+  showAddBudget.value = false
   await refresh()
 }
 </script>
 
 <template>
   <div>
-    <h1>Monthly overview</h1>
+    <div class="page-header">
+      <h1>Monthly overview</h1>
+      <div class="month-nav">
+        <button type="button" @click="prevMonth">&lsaquo;</button>
+        <span class="month-label">{{ monthLabel }}</span>
+        <button type="button" @click="nextMonth">&rsaquo;</button>
+        <button type="button" :disabled="isCurrentMonth" @click="goToday">Today</button>
+      </div>
+    </div>
 
     <p v-if="overviewError" class="error">
       Could not load overview: {{ overviewError.message }}
@@ -63,6 +118,18 @@ async function onCreated() {
         </div>
       </section>
 
+      <section class="budget-action">
+        <p v-if="overview.budget.already_set">
+          Budget set for this month.
+        </p>
+        <template v-else>
+          <p>
+            Budget not set for this month. Estimated costs for this month: €{{ euros(overview.budget.set_aside_cents) }}.
+          </p>
+          <button type="button" @click="showAddBudget = true">Add budget to account</button>
+        </template>
+      </section>
+
       <section>
         <h2>Accounts</h2>
         <ul class="accounts">
@@ -75,11 +142,27 @@ async function onCreated() {
       <section>
         <div class="payments-header">
           <h2>Payments this month</h2>
-          <button type="button" @click="showAddAdhoc = true">Add ad hoc cost</button>
+          <div class="payments-actions">
+            <button type="button" @click="showAddRecurring = true">Add recurring cost</button>
+            <button type="button" @click="showAddAdhoc = true">Add ad hoc cost</button>
+          </div>
         </div>
-        <div v-if="overview.payments.length === 0">No payments this month.</div>
+
+        <h3>Unpaid</h3>
+        <div v-if="unpaidPayments.length === 0">No unpaid payments this month.</div>
         <PaymentRow
-          v-for="p in overview.payments"
+          v-for="p in unpaidPayments"
+          :key="p.id"
+          :payment="p"
+          :category-name="categoryName(p.category_id)"
+          :account-name="accountName(p.account_id)"
+          @select="selectedPayment = $event"
+        />
+
+        <h3>Paid</h3>
+        <div v-if="paidPayments.length === 0">No paid payments this month.</div>
+        <PaymentRow
+          v-for="p in paidPayments"
           :key="p.id"
           :payment="p"
           :category-name="categoryName(p.category_id)"
@@ -103,12 +186,48 @@ async function onCreated() {
       :categories="categories ?? []"
       :accounts="accounts ?? []"
       @close="showAddAdhoc = false"
-      @created="onCreated"
+      @created="onAdhocCreated"
+    />
+
+    <AddRecurringModal
+      v-if="showAddRecurring"
+      :categories="categories ?? []"
+      :accounts="accounts ?? []"
+      @close="showAddRecurring = false"
+      @created="onRecurringCreated"
+    />
+
+    <AddBudgetModal
+      v-if="showAddBudget && overview"
+      :accounts="accounts ?? []"
+      :amount-cents="overview.budget.set_aside_cents"
+      :note="overview.budget.marker_note"
+      @close="showAddBudget = false"
+      @created="onBudgetCreated"
     />
   </div>
 </template>
 
 <style scoped>
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.month-label {
+  min-width: 10rem;
+  text-align: center;
+  font-weight: 600;
+}
+
 .summary {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -135,6 +254,17 @@ async function onCreated() {
   font-weight: 600;
 }
 
+.budget-action {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.budget-action p {
+  margin: 0 0 0.5rem;
+}
+
 .accounts {
   list-style: none;
   padding: 0;
@@ -144,6 +274,11 @@ async function onCreated() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.payments-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .error {

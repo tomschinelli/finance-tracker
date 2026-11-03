@@ -62,8 +62,13 @@ the normal workflow.
 
 ## Domain model (v1)
 
-- **Account** — `id, name, starting_balance_cents, currency, created_at`.
-  Multiple purpose-based accounts (e.g. Savings, Fix Costs, Living).
+- **Account** — `id, name, starting_balance_cents, currency, is_default,
+  created_at`. Multiple purpose-based accounts (e.g. Savings, Fix Costs,
+  Living). Exactly one account is flagged `is_default` (enforced by a
+  partial unique index) — it's the only account that can be funded from
+  outside the ledger directly (e.g. a salary deposit, via a plain
+  adjustment); every other account is funded by a transfer, with the
+  source account chosen explicitly each time (see Transfer, below).
   Current balance is **derived**, not a stored mutable counter:
   `starting_balance_cents + Σ(signed amount of paid payments for that
   account) + Σ(balance_adjustments for that account)`. Sign comes from the
@@ -84,9 +89,19 @@ the normal workflow.
   as unpaid payments (idempotent on `(recurring_definition_id, due_date)`).
   No cron/scheduler.
 - **BalanceAdjustment** — `id, account_id, amount_cents (signed), note,
-  occurred_on, created_at`. Manual correction/transfer, independent of the
-  payment ledger — the override mechanism for when an account's real-world
-  balance doesn't match what the ledger implies.
+  occurred_on, created_at`. Only ever created directly (`POST
+  /accounts/{id}/adjustments`) for the default account — a sign-agnostic
+  manual correction/external deposit, independent of the payment ledger.
+  Every other account only gets `balance_adjustments` rows as one half of
+  a Transfer (below); the API rejects a direct adjustment on a non-default
+  account.
+- **Transfer** — not a separate table: `POST /transfers` inserts two
+  `balance_adjustments` rows in one DB transaction (a negative on the
+  source, a positive on the destination), sharing the same note. Caller
+  picks both accounts explicitly — any account can be the source. This is
+  how the monthly budget set-aside funds a target account (e.g. Fix
+  Costs), and how any non-default account's balance is corrected — as a
+  real movement between two accounts, never an isolated credit.
 
 Money is stored as integer cents, never floating point, to avoid rounding
 errors — standard practice for financial data.
@@ -97,9 +112,10 @@ Computed, not stored:
   Σ(active quarterly-expense definitions)/3 + Σ(active yearly-expense
   definitions)/12 — the amount to transfer out so fixed + amortized
   irregular costs are covered without touching it.
-- **Yearly overview** — this year's yearly-frequency payments, paid vs
-  remaining totals, and whether each account's current balance covers its
-  remaining yearly cost.
+- **Yearly overview** — a given year's yearly-frequency payments, paid vs
+  remaining totals, whether each account's current balance covers its
+  remaining yearly cost, and a monthly buffer (total yearly cost / 12) that
+  would cover those costs if set aside monthly.
 
 ### Explicitly out of scope for v1
 

@@ -9,6 +9,16 @@ select * from accounts order by id;
 -- name: GetAccount :one
 select * from accounts where id = $1;
 
+-- name: GetDefaultAccount :one
+select * from accounts where is_default = true limit 1;
+
+-- name: UnsetDefaultAccounts :exec
+update accounts set is_default = false where is_default = true;
+
+-- name: MarkAccountDefault :one
+update accounts set is_default = true where id = $1
+returning *;
+
 -- name: SumPaidPaymentsByAccount :one
 select coalesce(sum(case when c.kind = 'income' then p.amount_cents else -p.amount_cents end), 0)::bigint as total
 from payments p
@@ -27,6 +37,9 @@ returning *;
 
 -- name: ListAdjustmentsByAccount :many
 select * from balance_adjustments where account_id = $1 order by occurred_on, id;
+
+-- name: FindAdjustmentsByNote :many
+select * from balance_adjustments where note = $1 order by id;
 
 -- name: CreateCategory :one
 insert into categories (name, kind)
@@ -74,6 +87,11 @@ returning *;
 
 -- name: GetPayment :one
 select * from payments where id = $1;
+
+-- name: ListPaymentsByAccount :many
+select * from payments
+where account_id = $1
+order by due_date desc, id desc;
 
 -- name: ListPaymentsByYear :many
 select * from payments

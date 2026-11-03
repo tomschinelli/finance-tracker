@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"finance-backend/internal/finance"
@@ -17,6 +19,7 @@ type accountResponse struct {
 	Currency             string `json:"currency"`
 	StartingBalanceCents int64  `json:"starting_balance_cents"`
 	CurrentBalanceCents  int64  `json:"current_balance_cents"`
+	IsDefault            bool   `json:"is_default"`
 }
 
 func (s *Server) accountBalance(ctx context.Context, acct store.Account) (int64, error) {
@@ -51,6 +54,7 @@ func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 			Currency:             a.Currency,
 			StartingBalanceCents: a.StartingBalanceCents,
 			CurrentBalanceCents:  bal,
+			IsDefault:            a.IsDefault,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -76,12 +80,41 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 		req.Currency = "EUR"
 	}
 
-	acct, err := s.q.CreateAccount(r.Context(), store.CreateAccountParams{
+	ctx := r.Context()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	acct, err := q.CreateAccount(ctx, store.CreateAccountParams{
 		Name:                 req.Name,
 		StartingBalanceCents: req.StartingBalanceCents,
 		Currency:             req.Currency,
 	})
 	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+
+	// The first account ever created becomes the default automatically,
+	// since the app needs exactly one default account to fund transfers
+	// from. Later accounts stay non-default until explicitly set.
+	if _, err := q.GetDefaultAccount(ctx); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			handleDBError(w, err)
+			return
+		}
+		acct, err = q.MarkAccountDefault(ctx, acct.ID)
+		if err != nil {
+			handleDBError(w, err)
+			return
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		handleDBError(w, err)
 		return
 	}
@@ -92,6 +125,56 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 		Currency:             acct.Currency,
 		StartingBalanceCents: acct.StartingBalanceCents,
 		CurrentBalanceCents:  acct.StartingBalanceCents,
+		IsDefault:            acct.IsDefault,
+	})
+}
+
+// setDefaultAccount makes the given account the sole default account,
+// unsetting any previous one. The default account is the only one that can
+// be funded from outside the ledger directly; every other account is
+// funded via a transfer out of it (see POST /transfers).
+func (s *Server) setDefaultAccount(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid account id")
+		return
+	}
+
+	ctx := r.Context()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	if err := q.UnsetDefaultAccounts(ctx); err != nil {
+		handleDBError(w, err)
+		return
+	}
+	acct, err := q.MarkAccountDefault(ctx, id)
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		handleDBError(w, err)
+		return
+	}
+
+	bal, err := s.accountBalance(ctx, acct)
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, accountResponse{
+		ID:                   acct.ID,
+		Name:                 acct.Name,
+		Currency:             acct.Currency,
+		StartingBalanceCents: acct.StartingBalanceCents,
+		CurrentBalanceCents:  bal,
+		IsDefault:            acct.IsDefault,
 	})
 }
 
@@ -136,6 +219,19 @@ func (s *Server) createAdjustment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only the default account can be adjusted without a counterpart
+	// account; every other account's balance changes via a transfer (see
+	// createTransfer), so an offsetting debit/credit always exists.
+	acct, err := s.q.GetAccount(r.Context(), id)
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+	if !acct.IsDefault {
+		writeError(w, http.StatusBadRequest, "non-default accounts must be funded via a transfer (POST /transfers)")
+		return
+	}
+
 	occurredOn, err := parseDate(req.OccurredOn)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid occurred_on")
@@ -159,6 +255,26 @@ func (s *Server) createAdjustment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, toAdjustmentResponse(adj))
+}
+
+func (s *Server) listAccountPayments(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid account id")
+		return
+	}
+
+	payments, err := s.q.ListPaymentsByAccount(r.Context(), id)
+	if err != nil {
+		handleDBError(w, err)
+		return
+	}
+
+	out := make([]paymentResponse, 0, len(payments))
+	for _, p := range payments {
+		out = append(out, toPaymentResponse(p))
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) listAdjustments(w http.ResponseWriter, r *http.Request) {

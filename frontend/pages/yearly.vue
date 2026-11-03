@@ -1,15 +1,32 @@
 <script setup lang="ts">
-import type { Account, Category, Payment, YearlyOverview } from '~/types/api'
+import type { Account, Category, Payment, RecurringDefinition, YearlyOverview } from '~/types/api'
 
 const api = useApi()
-const year = new Date().getFullYear()
+const currentYear = new Date().getFullYear()
+const year = ref(currentYear)
 
 const { data: overview, error: overviewError, refresh } = await useAsyncData<YearlyOverview>(
   'yearly-overview',
-  () => api.get(`/overview/yearly?year=${year}`)
+  () => api.get(`/overview/yearly?year=${year.value}`)
 )
 const { data: categories } = await useAsyncData<Category[]>('categories', () => api.get('/categories'), { default: () => [] })
 const { data: accounts } = await useAsyncData<Account[]>('accounts', () => api.get('/accounts'), { default: () => [] })
+
+watch(year, () => refresh())
+
+const isCurrentYear = computed(() => year.value === currentYear)
+
+function prevYear() {
+  year.value -= 1
+}
+
+function nextYear() {
+  year.value += 1
+}
+
+function goToday() {
+  year.value = currentYear
+}
 
 const categoryName = (id: string) => categories.value?.find(c => c.id === id)?.name ?? id
 const accountName = (id: string) => accounts.value?.find(a => a.id === id)?.name ?? id
@@ -19,16 +36,30 @@ function euros(cents: number) {
 }
 
 const selectedPayment = ref<Payment | null>(null)
+const showAddRecurring = ref(false)
 
 async function onSaved() {
   selectedPayment.value = null
+  await refresh()
+}
+
+async function onRecurringCreated(_definition: RecurringDefinition) {
+  showAddRecurring.value = false
   await refresh()
 }
 </script>
 
 <template>
   <div>
-    <h1>Yearly overview ({{ year }})</h1>
+    <div class="page-header">
+      <h1>Yearly overview</h1>
+      <div class="year-nav">
+        <button type="button" @click="prevYear">&lsaquo;</button>
+        <span class="year-label">{{ year }}</span>
+        <button type="button" @click="nextYear">&rsaquo;</button>
+        <button type="button" :disabled="isCurrentYear" @click="goToday">Today</button>
+      </div>
+    </div>
 
     <p v-if="overviewError" class="error">
       Could not load overview: {{ overviewError.message }}
@@ -43,6 +74,10 @@ async function onSaved() {
         <div class="card">
           <h3>Remaining</h3>
           <p>€{{ euros(overview.totals.remaining_cents) }}</p>
+        </div>
+        <div class="card">
+          <h3>Monthly buffer needed</h3>
+          <p>€{{ euros(overview.totals.monthly_buffer_cents) }}</p>
         </div>
       </section>
 
@@ -60,7 +95,10 @@ async function onSaved() {
       </section>
 
       <section>
-        <h2>Payments</h2>
+        <div class="payments-header">
+          <h2>Payments</h2>
+          <button v-if="isCurrentYear" type="button" @click="showAddRecurring = true">Add yearly cost</button>
+        </div>
         <div v-if="overview.payments.length === 0">No yearly payments.</div>
         <PaymentRow
           v-for="p in overview.payments"
@@ -81,13 +119,41 @@ async function onSaved() {
       @close="selectedPayment = null"
       @saved="onSaved"
     />
+
+    <AddRecurringModal
+      v-if="showAddRecurring"
+      :categories="categories ?? []"
+      :accounts="accounts ?? []"
+      fixed-frequency="yearly"
+      @close="showAddRecurring = false"
+      @created="onRecurringCreated"
+    />
   </div>
 </template>
 
 <style scoped>
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.year-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.year-label {
+  min-width: 4rem;
+  text-align: center;
+  font-weight: 600;
+}
+
 .summary {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -114,6 +180,12 @@ async function onSaved() {
 .accounts {
   list-style: none;
   padding: 0;
+}
+
+.payments-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .covers {

@@ -14,7 +14,7 @@ import (
 const createAccount = `-- name: CreateAccount :one
 insert into accounts (name, starting_balance_cents, currency)
 values ($1, $2, $3)
-returning id, name, starting_balance_cents, currency, created_at
+returning id, name, starting_balance_cents, currency, created_at, is_default
 `
 
 type CreateAccountParams struct {
@@ -32,6 +32,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.StartingBalanceCents,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.IsDefault,
 	)
 	return i, err
 }
@@ -166,8 +167,39 @@ func (q *Queries) CreateRecurringDefinition(ctx context.Context, arg CreateRecur
 	return i, err
 }
 
+const findAdjustmentsByNote = `-- name: FindAdjustmentsByNote :many
+select id, account_id, amount_cents, note, occurred_on, created_at from balance_adjustments where note = $1 order by id
+`
+
+func (q *Queries) FindAdjustmentsByNote(ctx context.Context, note pgtype.Text) ([]BalanceAdjustment, error) {
+	rows, err := q.db.Query(ctx, findAdjustmentsByNote, note)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BalanceAdjustment
+	for rows.Next() {
+		var i BalanceAdjustment
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.AmountCents,
+			&i.Note,
+			&i.OccurredOn,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAccount = `-- name: GetAccount :one
-select id, name, starting_balance_cents, currency, created_at from accounts where id = $1
+select id, name, starting_balance_cents, currency, created_at, is_default from accounts where id = $1
 `
 
 func (q *Queries) GetAccount(ctx context.Context, id int64) (Account, error) {
@@ -179,6 +211,7 @@ func (q *Queries) GetAccount(ctx context.Context, id int64) (Account, error) {
 		&i.StartingBalanceCents,
 		&i.Currency,
 		&i.CreatedAt,
+		&i.IsDefault,
 	)
 	return i, err
 }
@@ -191,6 +224,24 @@ func (q *Queries) GetCategory(ctx context.Context, id int64) (Category, error) {
 	row := q.db.QueryRow(ctx, getCategory, id)
 	var i Category
 	err := row.Scan(&i.ID, &i.Name, &i.Kind)
+	return i, err
+}
+
+const getDefaultAccount = `-- name: GetDefaultAccount :one
+select id, name, starting_balance_cents, currency, created_at, is_default from accounts where is_default = true limit 1
+`
+
+func (q *Queries) GetDefaultAccount(ctx context.Context) (Account, error) {
+	row := q.db.QueryRow(ctx, getDefaultAccount)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.StartingBalanceCents,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.IsDefault,
+	)
 	return i, err
 }
 
@@ -290,7 +341,7 @@ func (q *Queries) InsertOccurrence(ctx context.Context, arg InsertOccurrencePara
 }
 
 const listAccounts = `-- name: ListAccounts :many
-select id, name, starting_balance_cents, currency, created_at from accounts order by id
+select id, name, starting_balance_cents, currency, created_at, is_default from accounts order by id
 `
 
 func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
@@ -308,6 +359,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 			&i.StartingBalanceCents,
 			&i.Currency,
 			&i.CreatedAt,
+			&i.IsDefault,
 		); err != nil {
 			return nil, err
 		}
@@ -398,6 +450,42 @@ func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
 	for rows.Next() {
 		var i Category
 		if err := rows.Scan(&i.ID, &i.Name, &i.Kind); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPaymentsByAccount = `-- name: ListPaymentsByAccount :many
+select id, recurring_definition_id, label, category_id, account_id, amount_cents, due_date, paid_date, created_at from payments
+where account_id = $1
+order by due_date desc, id desc
+`
+
+func (q *Queries) ListPaymentsByAccount(ctx context.Context, accountID int64) ([]Payment, error) {
+	rows, err := q.db.Query(ctx, listPaymentsByAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Payment
+	for rows.Next() {
+		var i Payment
+		if err := rows.Scan(
+			&i.ID,
+			&i.RecurringDefinitionID,
+			&i.Label,
+			&i.CategoryID,
+			&i.AccountID,
+			&i.AmountCents,
+			&i.DueDate,
+			&i.PaidDate,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -556,6 +644,25 @@ func (q *Queries) ListYearlyFrequencyPayments(ctx context.Context, dollar_1 int3
 	return items, nil
 }
 
+const markAccountDefault = `-- name: MarkAccountDefault :one
+update accounts set is_default = true where id = $1
+returning id, name, starting_balance_cents, currency, created_at, is_default
+`
+
+func (q *Queries) MarkAccountDefault(ctx context.Context, id int64) (Account, error) {
+	row := q.db.QueryRow(ctx, markAccountDefault, id)
+	var i Account
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.StartingBalanceCents,
+		&i.Currency,
+		&i.CreatedAt,
+		&i.IsDefault,
+	)
+	return i, err
+}
+
 const sumActiveDefinitionsByFrequencyKind = `-- name: SumActiveDefinitionsByFrequencyKind :many
 select rd.frequency, c.kind, coalesce(sum(rd.amount_cents), 0)::bigint as total
 from recurring_definitions rd
@@ -615,6 +722,15 @@ func (q *Queries) SumPaidPaymentsByAccount(ctx context.Context, accountID int64)
 	var total int64
 	err := row.Scan(&total)
 	return total, err
+}
+
+const unsetDefaultAccounts = `-- name: UnsetDefaultAccounts :exec
+update accounts set is_default = false where is_default = true
+`
+
+func (q *Queries) UnsetDefaultAccounts(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, unsetDefaultAccounts)
+	return err
 }
 
 const updatePayment = `-- name: UpdatePayment :one

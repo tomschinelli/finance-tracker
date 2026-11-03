@@ -14,6 +14,7 @@ type Account struct {
 	StartingBalanceCents int64              `json:"starting_balance_cents"`
 	Currency             string             `json:"currency"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	IsDefault            bool               `json:"is_default"`
 }
 
 type BalanceAdjustment struct {

@@ -3,15 +3,18 @@ package api
 import (
 	"net/http"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"finance-backend/internal/store"
 )
 
 type Server struct {
-	q *store.Queries
+	pool *pgxpool.Pool
+	q    *store.Queries
 }
 
-func NewServer(q *store.Queries) *Server {
-	return &Server{q: q}
+func NewServer(pool *pgxpool.Pool, q *store.Queries) *Server {
+	return &Server{pool: pool, q: q}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -21,6 +24,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /accounts", s.createAccount)
 	mux.HandleFunc("POST /accounts/{id}/adjustments", s.createAdjustment)
 	mux.HandleFunc("GET /accounts/{id}/adjustments", s.listAdjustments)
+	mux.HandleFunc("GET /accounts/{id}/payments", s.listAccountPayments)
+	mux.HandleFunc("POST /accounts/{id}/default", s.setDefaultAccount)
+
+	mux.HandleFunc("POST /transfers", s.createTransfer)
 
 	mux.HandleFunc("GET /categories", s.listCategories)
 	mux.HandleFunc("POST /categories", s.createCategory)

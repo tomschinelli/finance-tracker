@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Account, AccountAdjustment } from '~/types/api'
+import type { Account, AccountAdjustment, Payment } from '~/types/api'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -18,6 +18,12 @@ const { data: adjustments, error: adjustmentsError } = await useAsyncData<Accoun
   { default: () => [] }
 )
 const adjustmentsByRecent = computed(() => [...(adjustments.value ?? [])].reverse())
+
+const { data: payments, error: paymentsError } = await useAsyncData<Payment[]>(
+  `account-${id}-payments`,
+  () => api.get(`/accounts/${id}/payments`),
+  { default: () => [] }
+)
 
 function euros(cents: number) {
   return (cents / 100).toFixed(2)
@@ -69,6 +75,30 @@ function euros(cents: number) {
               {{ adj.amount_cents >= 0 ? '+' : '' }}{{ euros(adj.amount_cents) }}
             </td>
             <td>{{ adj.note }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Payments</h2>
+      <p v-if="paymentsError" class="error">
+        Could not load payments: {{ paymentsError.message }}
+      </p>
+      <p v-else-if="!payments?.length">No payments yet.</p>
+      <table v-else class="adjustments">
+        <thead>
+          <tr>
+            <th>Due date</th>
+            <th>Label</th>
+            <th>Amount</th>
+            <th>Paid date</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in payments" :key="p.id">
+            <td>{{ p.due_date }}</td>
+            <td>{{ p.label }}</td>
+            <td>{{ euros(p.amount_cents) }}</td>
+            <td>{{ p.paid_date ?? 'unpaid' }}</td>
           </tr>
         </tbody>
       </table>

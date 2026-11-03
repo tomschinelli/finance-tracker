@@ -4,6 +4,7 @@ export interface Account {
   currency: string
   starting_balance_cents: number
   current_balance_cents: number
+  is_default: boolean
 }
 
 export interface AccountAdjustment {
@@ -12,6 +13,14 @@ export interface AccountAdjustment {
   note: string
   occurred_on: string
   created_at: string
+}
+
+export interface Transfer {
+  from_account_id: string
+  to_account_id: string
+  amount_cents: number
+  debit: AccountAdjustment
+  credit: AccountAdjustment
 }
 
 export type CategoryKind = 'income' | 'expense'
@@ -52,6 +61,7 @@ export interface YearlyOverview {
   totals: {
     paid_cents: number
     remaining_cents: number
+    monthly_buffer_cents: number
   }
   accounts: {
     account_id: string
@@ -70,6 +80,8 @@ export interface MonthlyOverview {
     set_aside_cents: number
     paid_against_fixed_costs_cents: number
     remaining_cents: number
+    already_set: boolean
+    marker_note: string
   }
   accounts: {
     account_id: string
