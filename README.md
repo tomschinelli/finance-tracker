@@ -45,7 +45,7 @@ See [`docs/TODO.md`](docs/TODO.md) for the full, prioritized backlog.
 Nuxt 3 (TypeScript) frontend → Go (`net/http`, no framework) JSON API →
 PostgreSQL. No ORM (`pgx` + `sqlc`), schema-first migrations
 (`golang-migrate`). Details and rationale: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
-[`docs/DECISIONS.md`](docs/DECISIONS.md).
+[`docs/adr/`](docs/adr/).
 
 ## Quick start
 
@@ -59,7 +59,7 @@ the full command reference, see [`CLAUDE.md`](CLAUDE.md).
 ## Docs
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — domain model, backend/frontend layout, data flow
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) — why things are built the way they are
+- [`docs/adr/`](docs/adr/) — why things are built the way they are
 - [`docs/TODO.md`](docs/TODO.md) — backlog
 - [`docs/INTELLIJ_SETUP.md`](docs/INTELLIJ_SETUP.md) — IDE run configs
 - [`CLAUDE.md`](CLAUDE.md) — commands, ground rules, conventions

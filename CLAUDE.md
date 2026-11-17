@@ -8,7 +8,7 @@ Personal expense/budget tracker. Nuxt 3 (TypeScript) frontend, Go JSON API
 backend, PostgreSQL storage. Single user, no auth in v1.
 
 Read `docs/ARCHITECTURE.md` before touching backend or frontend structure.
-Read `docs/DECISIONS.md` before re-deciding something that's already settled.
+Read `docs/adr/` before re-deciding something that's already settled.
 
 ## Keeping README.md current
 
@@ -21,7 +21,7 @@ links to, update it:
 - Stack/architecture change visible at a glance (new major component,
   changed quick-start command) → update the relevant line or link target.
 - Everything else (schema detail, domain rules, rationale) goes in
-  `docs/ARCHITECTURE.md` / `docs/DECISIONS.md`, referenced from the README,
+  `docs/ARCHITECTURE.md` / `docs/adr/`, referenced from the README,
   never inlined into it.
 
 ## Ground rules
@@ -44,9 +44,10 @@ links to, update it:
    library first, a small set of well-known, widely-used packages second,
    no ORM/framework magic. Prefer the boring, idiomatic choice.
 7. **Keep decisions documented, keep the log small.** When an architectural
-   or technical decision is made, add one entry to `docs/DECISIONS.md`.
-   Only essential decisions go there — not implementation detail that's
-   obvious from reading the code.
+   or technical decision is made, add one ADR to `docs/adr/`
+   (`NNNN-slug.md`, next sequential number; when superseding, set the old
+   one's `status: superseded by ADR-NNNN`). Only essential decisions go
+   there — not implementation detail that's obvious from reading the code.
 8. **Verify at the lowest cost that proves the fix.** Prefer a `curl`/`psql`
    check or a unit test over a full container rebuild, and a rebuild over a
    browser round-trip. Only drive the browser for UI-specific behavior that
@@ -63,7 +64,7 @@ links to, update it:
 | Migrations | `golang-migrate`                        |
 | Storage  | PostgreSQL 16                             |
 
-Rationale for each is in `docs/DECISIONS.md`.
+Rationale for each is in `docs/adr/`.
 
 ## Commands
 
