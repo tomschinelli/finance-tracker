@@ -259,3 +259,17 @@ BREAKING CHANGE: column renamed; requires migration 0003.
 
 Scope is the touched area (`backend`, `frontend`, `store`, `docs`, ...).
 One logical change per commit.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `tomschinelli/finance-tracker`, via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
