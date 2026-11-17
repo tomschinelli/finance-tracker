@@ -38,7 +38,7 @@ Not built yet, but where this is headed:
 - **Statistics & insight overviews** — spending trends over time, not just
   a snapshot of right now.
 
-See [`docs/TODO.md`](docs/TODO.md) for the full, prioritized backlog.
+See [`docs/backlog/`](docs/backlog/) for the full, prioritized backlog.
 
 ## Stack
 
@@ -60,6 +60,6 @@ the full command reference, see [`CLAUDE.md`](CLAUDE.md).
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — domain model, backend/frontend layout, data flow
 - [`docs/adr/`](docs/adr/) — why things are built the way they are
-- [`docs/TODO.md`](docs/TODO.md) — backlog
+- [`docs/backlog/`](docs/backlog/) — backlog
 - [`docs/INTELLIJ_SETUP.md`](docs/INTELLIJ_SETUP.md) — IDE run configs
 - [`CLAUDE.md`](CLAUDE.md) — commands, ground rules, conventions
